@@ -5,8 +5,8 @@ from dataclasses import dataclass
 @dataclass
 class ApiClient:
     """Client for interacting with the Ressy API"""
-    def __init__(self):
-        self.base_url = "http://localhost:8002"
+    def __init__(self, base_url: str = "http://localhost:8002"):
+        self.base_url = base_url
 
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Any:
         url = f"{self.base_url}{endpoint}"

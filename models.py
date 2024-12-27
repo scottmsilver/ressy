@@ -191,8 +191,19 @@ class RoomResponse(BaseModel):
     room_number: str
     building_id: int
     amenities: List[str]
-    
+    capacity: int
     model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def model_validate(cls, room):
+        return cls(
+            id=room.id,
+            name=room.name,
+            room_number=room.room_number,
+            building_id=room.building_id,
+            amenities=room.amenities or [],
+            capacity=room.capacity
+        )
 
 class GuestCreate(BaseModel):
     name: str
