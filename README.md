@@ -17,8 +17,8 @@ Ressy is a comprehensive property management system designed to help manage prop
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd ressy2
+git clone https://github.com/scottmsilver/ressy.git
+cd ressy
 ```
 
 2. Create a virtual environment and activate it:
