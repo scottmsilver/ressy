@@ -147,23 +147,25 @@ export default function PropertyDetails() {
   }
 
   const handleAddBuilding = async () => {
-    if (!property || !newBuildingName.trim()) return
+    if (!property) return;
 
     try {
-      setError(null)
-      const newBuilding = await api.createBuilding(property.id, {
-        name: newBuildingName,
-      })
+      setError(null);
+      const building = await api.createBuilding(property.id, {
+        name: newBuildingName.trim(),
+      });
 
+      // Update property state with new building
       setProperty({
         ...property,
-        buildings: [...property.buildings, { ...newBuilding, rooms: [] }],
-      })
+        buildings: [...property.buildings, { ...building, rooms: [] }],
+      });
 
-      handleCloseDialog()
+      handleCloseDialog();
+      setNewBuildingName('');
     } catch (error) {
-      console.error('Failed to add building:', error)
-      setError(error instanceof Error ? error.message : 'Failed to add building')
+      console.error('Failed to create building:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create building');
     }
   }
 
@@ -171,30 +173,33 @@ export default function PropertyDetails() {
     if (!property || !selectedBuilding) return
 
     try {
-      setError(null)
+      setError(null);
       const room = await api.createRoom(selectedBuilding.id, {
-        name: newRoomData.name,
-        room_number: newRoomData.room_number,
+        name: newRoomData.name.trim(),
+        room_number: newRoomData.room_number.trim(),
         amenities: newRoomData.amenities,
-      })
+      });
 
-      // Fetch updated rooms for the building
-      const updatedRooms = await api.listRooms(selectedBuilding.id);
-
-      // Update the property state with new rooms
+      // Update the property state with new room
       setProperty({
         ...property,
         buildings: property.buildings.map((building) =>
           building.id === selectedBuilding.id
-            ? { ...building, rooms: updatedRooms }
+            ? { ...building, rooms: [...building.rooms, { ...room, beds: [] }] }
             : building
         ),
-      })
+      });
 
-      handleCloseDialog()
+      handleCloseDialog();
+      // Reset room data
+      setNewRoomData({
+        name: '',
+        room_number: '',
+        amenities: [],
+      });
     } catch (error) {
-      console.error('Failed to create room:', error)
-      setError(error instanceof Error ? error.message : 'Failed to create room')
+      console.error('Failed to create room:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create room');
     }
   }
 
@@ -443,20 +448,42 @@ export default function PropertyDetails() {
     }
   }
 
-  const handleOpenDialog = (type: DialogType, room?: Room, building?: Building) => {
+  const handleOpenDialog = (
+    type: DialogType,
+    room?: Room,
+    building?: Building
+  ) => {
+    console.log('handleOpenDialog called with:', { type, room, building });
+    setOpenDialog(type);
+    
     if (room) {
-      setSelectedRoom(room)
+      console.log('Setting selected room:', room);
+      setSelectedRoom(room);
+      // Find and set the building for this room
+      const roomBuilding = property?.buildings.find(b => b.id === room.building_id);
+      if (roomBuilding) {
+        console.log('Setting selected building from room:', roomBuilding);
+        setSelectedBuilding(roomBuilding);
+      }
       setNewRoomData({
         name: room.name,
         room_number: room.room_number,
         amenities: room.amenities || [],
-      })
+      });
+    } else {
+      console.log('Resetting room data for new room');
+      setSelectedRoom(null);
+      setNewRoomData({
+        name: '',
+        room_number: '',
+        amenities: [],
+      });
     }
+
     if (building) {
-      setSelectedBuilding(building)
-      setNewBuildingName(building.name)
+      console.log('Setting selected building:', building);
+      setSelectedBuilding(building);
     }
-    setOpenDialog(type)
   }
 
   const handleCloseDialog = () => {
@@ -525,35 +552,56 @@ export default function PropertyDetails() {
           <Box 
             sx={{ 
               mb: 4,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
               '&:hover .property-actions': {
                 opacity: 1,
               },
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-              <Typography variant="h4">
-                {property.name}
-              </Typography>
-              <Typography variant="h5" color="text.secondary">
-                ({property.buildings.reduce((total, building) => 
-                  total + building.rooms.reduce((roomTotal, room) => 
-                    roomTotal + calculateRoomCapacity(room), 0), 0)})
-              </Typography>
-            </Box>
-            <IconButton 
-              size="small" 
-              className="property-actions"
-              onClick={() => handleOpenDialog('editProperty')}
-              sx={{ 
-                opacity: 0,
-                transition: 'opacity 0.2s',
-              }}
-            >
-              <EditIcon />
-            </IconButton>
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Stack direction="row" spacing={1} alignItems="baseline">
+                <Typography variant="h4" component="h1">
+                  {property.name}
+                </Typography>
+                <Typography variant="h5" color="text.secondary">
+                  ({property.buildings.reduce((total, building) => 
+                    total + building.rooms.reduce((roomTotal, room) => 
+                      roomTotal + calculateRoomCapacity(room), 0), 0)})
+                </Typography>
+              </Stack>
+              <Stack 
+                direction="row" 
+                spacing={1}
+                className="property-actions"
+                sx={{ 
+                  opacity: 0,
+                  transition: 'opacity 0.2s ease-in-out',
+                }}
+              >
+                <IconButton 
+                  size="small"
+                  onClick={() => setOpenDialog('editProperty')}
+                  sx={{ 
+                    bgcolor: 'background.paper',
+                    '&:hover': { bgcolor: 'action.hover' },
+                  }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={() => setOpenDialog('building')}
+                  sx={{ 
+                    bgcolor: 'background.paper',
+                    '&:hover': { bgcolor: 'action.hover' },
+                  }}
+                >
+                  <AddIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            </Stack>
+            <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 1 }}>
+              {property.address}
+            </Typography>
           </Box>
 
           {/* Buildings Section */}
@@ -562,79 +610,91 @@ export default function PropertyDetails() {
               <Box 
                 key={building.id} 
                 sx={{ 
+                  mb: 3, 
                   bgcolor: 'background.paper',
                   borderRadius: 1,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                  overflow: 'hidden'
+                  boxShadow: 1,
+                  position: 'relative',
+                  '&:hover .building-actions': {
+                    opacity: 1,
+                  },
                 }}
               >
                 {/* Building Header */}
                 <Box 
                   sx={{ 
-                    px: 3,
-                    py: 2,
-                    display: 'flex',
+                    p: 2, 
+                    display: 'flex', 
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    borderBottom: '1px solid',
+                    borderBottom: 1,
                     borderColor: 'divider',
-                    bgcolor: 'background.default',
-                    '&:hover .building-actions': {
-                      opacity: 1,
-                    },
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Stack direction="row" spacing={1} alignItems="baseline">
                     <Typography variant="h6">
-                      {building.name} ({building.rooms.reduce((total, room) => 
+                      {building.name}
+                    </Typography>
+                    <Typography variant="subtitle1" color="text.secondary">
+                      ({building.rooms.reduce((total, room) => 
                         total + calculateRoomCapacity(room), 0)})
                     </Typography>
-                    <IconButton 
+                  </Stack>
+                  <Stack 
+                    direction="row" 
+                    spacing={1}
+                    className="building-actions"
+                    sx={{ 
+                      opacity: 0,
+                      transition: 'opacity 0.2s ease-in-out',
+                    }}
+                  >
+                    <IconButton
                       size="small"
-                      className="building-actions"
+                      onClick={() => handleOpenDialog('room', undefined, building)}
+                      sx={{ 
+                        bgcolor: 'background.paper',
+                        '&:hover': { bgcolor: 'action.hover' },
+                      }}
+                    >
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
                       onClick={(e) => handleMenuOpen(e, 'building', building)}
                       sx={{ 
-                        opacity: 0,
-                        transition: 'opacity 0.2s',
+                        bgcolor: 'background.paper',
+                        '&:hover': { bgcolor: 'action.hover' },
                       }}
                     >
                       <MoreVertIcon fontSize="small" />
                     </IconButton>
-                  </Box>
-                  <Button
-                    size="small"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpenDialog('room', undefined, building)}
-                    variant="outlined"
-                  >
-                    Add Room
-                  </Button>
+                  </Stack>
                 </Box>
 
-                {/* Rooms Grid */}
+                {/* Rooms List */}
                 <Box sx={{ p: 2 }}>
                   <Grid container spacing={2}>
                     {building.rooms.map((room) => (
                       <Grid item xs={12} key={room.id}>
-                        <Box
-                          sx={{
+                        <Box 
+                          sx={{ 
                             p: 2,
+                            bgcolor: 'grey.50',
                             borderRadius: 1,
-                            border: '1px solid',
-                            borderColor: 'divider',
                             '&:hover': {
-                              bgcolor: 'action.hover',
-                              '& .room-actions': {
-                                opacity: 1,
-                              },
+                              bgcolor: 'grey.100',
+                            },
+                            '&:hover .room-actions': {
+                              opacity: 1,
                             },
                           }}
                         >
                           <Grid container alignItems="center" spacing={2}>
                             {/* Room Info */}
                             <Grid item xs={3}>
-                              <Stack direction="row" alignItems="baseline" spacing={1}>
-                                <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+                              <Stack direction="row" spacing={1} alignItems="baseline">
+                                <Typography variant="subtitle1">
                                   {room.name}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
@@ -642,7 +702,7 @@ export default function PropertyDetails() {
                                 </Typography>
                               </Stack>
                               <Typography variant="body2" color="text.secondary">
-                                #{room.room_number}
+                                Room {room.room_number}
                               </Typography>
                             </Grid>
 
@@ -708,14 +768,20 @@ export default function PropertyDetails() {
                                 className="room-actions"
                                 sx={{ 
                                   opacity: 0,
-                                  transition: 'opacity 0.2s',
+                                  transition: 'opacity 0.2s ease-in-out',
                                 }}
                               >
                                 <IconButton
                                   size="small"
-                                  onClick={(e) => handleMenuOpen(e, 'room', room)}
+                                  onClick={() => handleOpenDialog('editRoom', room)}
                                 >
-                                  <MoreVertIcon fontSize="small" />
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleMenuAction('delete', 'room', room)}
+                                >
+                                  <DeleteIcon fontSize="small" />
                                 </IconButton>
                               </Stack>
                             </Grid>
@@ -747,6 +813,7 @@ export default function PropertyDetails() {
                 fullWidth
                 value={newBuildingName}
                 onChange={(e) => setNewBuildingName(e.target.value)}
+                sx={{ mt: 2 }}
               />
             </DialogContent>
             <DialogActions>
@@ -754,6 +821,7 @@ export default function PropertyDetails() {
               <Button
                 onClick={openDialog === 'editBuilding' ? handleEditBuilding : handleAddBuilding}
                 variant="contained"
+                disabled={!newBuildingName.trim()}
               >
                 {openDialog === 'editBuilding' ? 'Save' : 'Add'}
               </Button>
@@ -804,11 +872,11 @@ export default function PropertyDetails() {
             <DialogActions>
               <Button onClick={handleCloseDialog}>Cancel</Button>
               <Button
-                onClick={handleEditRoom}
+                onClick={openDialog === 'editRoom' ? handleEditRoom : handleAddRoom}
                 variant="contained"
                 disabled={!newRoomData.name.trim() || !newRoomData.room_number.trim()}
               >
-                Save
+                {openDialog === 'editRoom' ? 'Save' : 'Add'}
               </Button>
             </DialogActions>
           </Dialog>
