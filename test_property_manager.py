@@ -120,7 +120,7 @@ def test_room_number_uniqueness(test_db):
     pm.create_room(test_db, building.id, name="Ocean View Suite", room_number="101")
     
     # Try to create another room with the same number
-    with pytest.raises(IntegrityError):
+    with pytest.raises(ValueError, match="Room number 101 already exists in this building"):
         pm.create_room(test_db, building.id, name="Mountain View Suite", room_number="101")
 
 def test_add_bed(test_db):
@@ -358,29 +358,52 @@ def test_room_amenities(test_db):
 def test_room_update_validation(test_db):
     """Test room update validation"""
     pm = PropertyManager()
-    
-    # Create property, building, and rooms
+
+    # Create property, building and rooms
     property = pm.create_property(test_db, "Test Hotel", "123 Main St")
     building = pm.create_building(test_db, property.id, {"name": "Main Building"})
-    room1 = pm.create_room(test_db, building.id, "Test Room 1", "101")
-    room2 = pm.create_room(test_db, building.id, "Test Room 2", "102")
-    
+    room1 = pm.create_room(test_db, building.id, name="Ocean View", room_number="101")
+    room2 = pm.create_room(test_db, building.id, name="Mountain View", room_number="102")
+
     # Test empty room number
-    with pytest.raises(ValueError, match="Room number is required"):
-        pm.update_room(test_db, room1.id, {"name": "New Name", "room_number": ""})
-    
+    with pytest.raises(ValueError, match="Room number cannot be empty"):
+        pm.update_room(test_db, room1.id, room_number="")
+
     # Test empty name
-    with pytest.raises(ValueError, match="Room name is required"):
-        pm.update_room(test_db, room1.id, {"name": "", "room_number": "103"})
-    
+    with pytest.raises(ValueError, match="Room name cannot be empty"):
+        pm.update_room(test_db, room1.id, name="")
+
     # Test duplicate room number
-    with pytest.raises(ValueError, match="Room with this number already exists in the building"):
-        pm.update_room(test_db, room1.id, {"name": "New Name", "room_number": "102"})
-    
-    # Test valid update
-    updated = pm.update_room(test_db, room1.id, {"name": "Updated Room", "room_number": "103"})
+    with pytest.raises(ValueError, match="Room number 102 already exists in this building"):
+        pm.update_room(test_db, room1.id, room_number="102")
+
+    # Test non-existent room
+    with pytest.raises(ValueError, match="Room not found"):
+        pm.update_room(test_db, 9999, name="New Name")
+
+    # Test successful update with all fields
+    updated = pm.update_room(
+        test_db, 
+        room1.id, 
+        name="Updated Room",
+        room_number="103",
+        amenities=["wifi", "tv", "ac"]
+    )
     assert updated.name == "Updated Room"
     assert updated.room_number == "103"
+    assert updated.amenities == ["wifi", "tv", "ac"]
+
+    # Test partial update (only name)
+    updated = pm.update_room(test_db, room1.id, name="New Name")
+    assert updated.name == "New Name"
+    assert updated.room_number == "103"  # unchanged
+    assert updated.amenities == ["wifi", "tv", "ac"]  # unchanged
+
+    # Test partial update (only amenities)
+    updated = pm.update_room(test_db, room1.id, amenities=["wifi"])
+    assert updated.name == "New Name"  # unchanged
+    assert updated.room_number == "103"  # unchanged
+    assert updated.amenities == ["wifi"]
 
 def test_property_details(test_db):
     """Test property details retrieval"""
@@ -513,3 +536,93 @@ def test_room_capacity_no_beds(test_db):
     # Calculate capacity
     total_capacity = sum(bed.capacity for bed in room.beds)
     assert total_capacity == 0
+
+def test_update_property(test_db):
+    """Test updating a property's details"""
+    pm = PropertyManager()
+    
+    # Create a property
+    property = pm.create_property(test_db, "Test Hotel", "123 Main St")
+    
+    # Update name only
+    updated = pm.update_property(test_db, property.id, name="New Hotel")
+    assert updated.name == "New Hotel"
+    assert updated.address == "123 Main St"
+    
+    # Update address only
+    updated = pm.update_property(test_db, property.id, address="456 Side St")
+    assert updated.name == "New Hotel"
+    assert updated.address == "456 Side St"
+    
+    # Update both
+    updated = pm.update_property(test_db, property.id, name="Final Hotel", address="789 Last St")
+    assert updated.name == "Final Hotel"
+    assert updated.address == "789 Last St"
+    
+    # Test validation
+    with pytest.raises(ValueError, match="Property name cannot be empty"):
+        pm.update_property(test_db, property.id, name="")
+    
+    with pytest.raises(ValueError, match="Property address cannot be empty"):
+        pm.update_property(test_db, property.id, address="")
+    
+    with pytest.raises(ValueError, match="Property not found"):
+        pm.update_property(test_db, 9999, name="Invalid")
+
+def test_update_building(test_db):
+    """Test updating a building's details"""
+    pm = PropertyManager()
+    
+    # Create property and building
+    property = pm.create_property(test_db, "Test Hotel", "123 Main St")
+    building = pm.create_building(test_db, property.id, {"name": "North Wing"})
+    
+    # Update name
+    updated = pm.update_building(test_db, building.id, name="South Wing")
+    assert updated.name == "South Wing"
+    
+    # Test validation
+    with pytest.raises(ValueError, match="Building name cannot be empty"):
+        pm.update_building(test_db, building.id, name="")
+    
+    with pytest.raises(ValueError, match="Building not found"):
+        pm.update_building(test_db, 9999, name="Invalid")
+
+def test_update_room(test_db):
+    """Test updating a room's details"""
+    pm = PropertyManager()
+    
+    # Create property, building and rooms
+    property = pm.create_property(test_db, "Test Hotel", "123 Main St")
+    building = pm.create_building(test_db, property.id, {"name": "North Wing"})
+    room1 = pm.create_room(test_db, building.id, name="Ocean View", room_number="101")
+    room2 = pm.create_room(test_db, building.id, name="Mountain View", room_number="102")
+    
+    # Update name only
+    updated = pm.update_room(test_db, room1.id, name="Lake View")
+    assert updated.name == "Lake View"
+    assert updated.room_number == "101"
+    
+    # Update room number only
+    updated = pm.update_room(test_db, room1.id, room_number="103")
+    assert updated.name == "Lake View"
+    assert updated.room_number == "103"
+    
+    # Update both
+    updated = pm.update_room(test_db, room1.id, name="City View", room_number="104")
+    assert updated.name == "City View"
+    assert updated.room_number == "104"
+    
+    # Test validation
+    with pytest.raises(ValueError, match="Room name cannot be empty"):
+        pm.update_room(test_db, room1.id, name="")
+    
+    with pytest.raises(ValueError, match="Room number cannot be empty"):
+        pm.update_room(test_db, room1.id, room_number="")
+    
+    with pytest.raises(ValueError, match="Room not found"):
+        pm.update_room(test_db, 9999, name="Invalid")
+    
+    # Test room number uniqueness
+    with pytest.raises(ValueError, match="Room number 102 already exists in this building"):
+        pm.update_room(test_db, room1.id, room_number="102")

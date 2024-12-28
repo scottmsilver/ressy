@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from datetime import datetime, date, timedelta
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 
 from database import SessionLocal, engine
 from models import (
@@ -30,6 +31,15 @@ async def lifespan(app: FastAPI):
     pass
 
 app = FastAPI(lifespan=lifespan, title="Ressy API", description="Property Management System API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for testing
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Dependency to get database session
 def get_db():
@@ -86,8 +96,10 @@ class RoomResponse(RoomBase):
             amenities=room.amenities or []
         )
 
-class RoomAmenitiesUpdate(BaseModel):
-    amenities: List[str]
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    room_number: Optional[str] = None
+    amenities: Optional[List[str]] = None
     model_config = ConfigDict(from_attributes=True)
 
 class BuildingBase(BaseModel):
@@ -146,6 +158,11 @@ class PropertyBase(BaseModel):
 
 class PropertyCreate(PropertyBase):
     pass
+
+class PropertyUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
 
 class PropertyResponse(PropertyBase):
     id: int
@@ -387,6 +404,15 @@ def generate_random_property(db: Session = Depends(get_db)):
     db_property = pm.generate_random_property(session=db)
     return PropertyResponse.model_validate(db_property)
 
+@app.put("/properties/{property_id}", response_model=PropertyResponse)
+def update_property(property_id: int, property_update: PropertyUpdate, db: Session = Depends(get_db)):
+    """Update a property's details"""
+    try:
+        updated = pm.update_property(db, property_id, name=property_update.name, address=property_update.address)
+        return updated
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # Building endpoints
 @app.post("/properties/{property_id}/buildings/", response_model=BuildingResponse)
 def create_building(property_id: int, building: BuildingCreate, db: Session = Depends(get_db)):
@@ -452,56 +478,19 @@ def delete_room(room_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Room not found")
     return {"message": "Room deleted"}
 
-@app.put("/rooms/{room_id}/amenities", response_model=RoomResponse)
-def update_room_amenities(room_id: int, amenities: RoomAmenitiesUpdate, db: Session = Depends(get_db)):
-    """Update room amenities"""
+@app.put("/rooms/{room_id}", response_model=RoomResponse)
+def update_room(room_id: int, room: RoomUpdate, db: Session = Depends(get_db)):
+    """Update a room's details including amenities"""
     try:
-        db_room = pm.update_room_amenities(session=db, room_id=room_id, amenities=amenities.amenities)
-        return RoomResponse.model_validate(db_room)
+        updated = pm.update_room(
+            db, 
+            room_id, 
+            name=room.name, 
+            room_number=room.room_number,
+            amenities=room.amenities
+        )
+        return updated
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/rooms/{room_id}/availability")
-def check_room_availability(
-    room_id: int,
-    start_date: date = Query(...),
-    end_date: date = Query(...),
-    session: Session = Depends(get_db)
-):
-    """Check if a room is available for given dates"""
-    try:
-        # Validate dates
-        if start_date >= end_date:
-            raise HTTPException(status_code=400, detail="End date must be after start date")
-
-        # Check if room exists
-        room = session.query(Room).filter(Room.id == room_id).first()
-        if not room:
-            raise HTTPException(status_code=404, detail="Room not found")
-
-        # Check for conflicts
-        conflicts = session.query(Reservation).filter(
-            Reservation.room_id == room_id,
-            Reservation.status == 'confirmed',
-            or_(
-                and_(
-                    Reservation.start_date <= start_date,
-                    Reservation.end_date > start_date
-                ),
-                and_(
-                    Reservation.start_date < end_date,
-                    Reservation.end_date >= end_date
-                ),
-                and_(
-                    Reservation.start_date >= start_date,
-                    Reservation.end_date <= end_date
-                )
-            )
-        ).first()
-
-        return {"available": not bool(conflicts)}
-
-    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 # Bed endpoints
@@ -1397,6 +1386,12 @@ def get_property_forecast_report(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)

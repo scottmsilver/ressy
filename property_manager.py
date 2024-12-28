@@ -54,23 +54,34 @@ class PropertyManager:
         session.refresh(building)
         return building
 
-    def create_room(self, session: Session, building_id: int, name: str, room_number: str) -> Room:
+    def create_room(self, session: Session, building_id: int, name: str, room_number: str, amenities: List[str] = None) -> Optional[Room]:
         """Create a new room in a building"""
-        # Validate building exists
-        building = session.get(Building, building_id)
+        if not name or not name.strip():
+            raise ValueError("Room name cannot be empty")
+        if not room_number or not room_number.strip():
+            raise ValueError("Room number cannot be empty")
+
+        # Check if building exists
+        building = session.query(Building).filter(Building.id == building_id).first()
         if not building:
             raise ValueError("Building not found")
 
-        # Create room
+        # Check if room number is unique in the building
+        existing = session.query(Room).filter(
+            Room.building_id == building_id,
+            Room.room_number == room_number.strip()
+        ).first()
+        if existing:
+            raise ValueError(f"Room number {room_number} already exists in this building")
+
         room = Room(
-            name=name,
-            room_number=room_number,
             building_id=building_id,
-            amenities=[]
+            name=name.strip(),
+            room_number=room_number.strip(),
+            amenities=amenities or []
         )
         session.add(room)
         session.commit()
-        session.refresh(room)
         return room
 
     def add_bed(self, session: Session, room_id: int, bed_type: Union[str, BedType], bed_subtype: Union[str, BedSubType]) -> Bed:
@@ -426,3 +437,69 @@ class PropertyManager:
         if not room:
             raise ValueError("Room not found")
         return room.beds
+
+    def update_property(self, session: Session, property_id: int, name: str = None, address: str = None) -> Optional[Property]:
+        """Update a property's details"""
+        property = self.get_property(session, property_id)
+        if not property:
+            raise ValueError("Property not found")
+        
+        if name is not None:
+            if not name.strip():
+                raise ValueError("Property name cannot be empty")
+            property.name = name.strip()
+        
+        if address is not None:
+            if not address.strip():
+                raise ValueError("Property address cannot be empty")
+            property.address = address.strip()
+        
+        session.commit()
+        return property
+
+    def update_building(self, session: Session, building_id: int, name: str) -> Optional[Building]:
+        """Update a building's details"""
+        building = session.query(Building).filter(Building.id == building_id).first()
+        if not building:
+            raise ValueError("Building not found")
+        
+        if not name.strip():
+            raise ValueError("Building name cannot be empty")
+        
+        building.name = name.strip()
+        session.commit()
+        return building
+
+    def update_room(self, session: Session, room_id: int, name: str = None, room_number: str = None, amenities: List[str] = None) -> Optional[Room]:
+        """Update a room's details"""
+        room = session.query(Room).filter(Room.id == room_id).first()
+        if not room:
+            raise ValueError("Room not found")
+        
+        if name is not None:
+            if not name.strip():
+                raise ValueError("Room name cannot be empty")
+            room.name = name.strip()
+        
+        if room_number is not None:
+            if not room_number.strip():
+                raise ValueError("Room number cannot be empty")
+            # Check if room number already exists in the building
+            existing_room = (
+                session.query(Room)
+                .filter(
+                    Room.building_id == room.building_id,
+                    Room.room_number == room_number.strip(),
+                    Room.id != room_id
+                )
+                .first()
+            )
+            if existing_room:
+                raise ValueError(f"Room number {room_number} already exists in this building")
+            room.room_number = room_number.strip()
+
+        if amenities is not None:
+            room.amenities = amenities
+
+        session.commit()
+        return room
