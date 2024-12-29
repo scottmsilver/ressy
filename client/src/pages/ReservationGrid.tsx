@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, CircularProgress, IconButton, Typography, Button, ButtonGroup } from '@mui/material';
+import { Box, CircularProgress, IconButton, Typography, Button, ButtonGroup, Dialog } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ChevronLeft, ChevronRight } from '@mui/icons-material';
-import { format, startOfDay, addDays, subDays, eachDayOfInterval, isWithinInterval, differenceInDays } from 'date-fns';
+import { format, startOfDay, addDays, subDays, eachDayOfInterval, isWithinInterval, differenceInDays, parseISO } from 'date-fns';
 import { RessyApi } from '../api/core/RessyApi';
 import { Room } from '../api/core/types';
 import { createPortal } from 'react-dom';
@@ -34,6 +34,13 @@ interface GridRow {
   buildingName: string;
 }
 
+interface DragState {
+  active: boolean;
+  startDate: Date | null;
+  endDate: Date | null;
+  roomId: number | null;
+}
+
 export default function ReservationGrid() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -42,6 +49,13 @@ export default function ReservationGrid() {
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [reservations, setReservations] = useState<ReservationEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dragState, setDragState] = useState<DragState>({
+    active: false,
+    startDate: null,
+    endDate: null,
+    roomId: null
+  });
+  const [showReservationDialog, setShowReservationDialog] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -153,87 +167,152 @@ export default function ReservationGrid() {
           format(event.end, 'yyyy-MM-dd') >= format(date, 'yyyy-MM-dd')
         );
 
-        return matchingReservations.map(reservation => {
-          const isStartDate = format(reservation.start, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
-          const isEndDate = format(reservation.end, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
-          
-          return (
-            <Box
-              key={reservation.id}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                navigate(`/reservations/${reservation.id}`);
-              }}
-              sx={{
-                position: 'absolute',
-                left: 0,
-                top: '20%',
-                height: '60%',
-                width: '100%',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                zIndex: 1000,
-                pointerEvents: 'auto',
-                '&:hover': {
-                  '& .reservation-overlay': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                  }
-                },
-              }}
-            >
-              {/* Transparent overlay for hover and click */}
-              <Box
-                className="reservation-overlay"
-                sx={{
-                  position: 'absolute',
-                  left: isStartDate ? '50%' : 0,
-                  right: isEndDate ? '50%' : 0,
-                  top: 0,
-                  bottom: 0,
-                  backgroundColor: 'transparent',
-                  borderTop: `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}`,
-                  borderBottom: `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}`,
-                  borderLeft: isStartDate ? `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}` : 'none',
-                  borderRight: isEndDate ? `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}` : 'none',
-                  transition: 'background-color 0.2s',
-                }}
-              />
+        const isDragging = dragState.active && dragState.roomId === params.row.id;
+        const isInDragRange = isDragging && dragState.startDate && dragState.endDate && 
+          isWithinInterval(date, {
+            start: startOfDay(dragState.startDate),
+            end: startOfDay(dragState.endDate)
+          });
+
+        return (
+          <>
+            {matchingReservations.map(reservation => {
+              const isStartDate = format(reservation.start, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
+              const isEndDate = format(reservation.end, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
               
-              {/* Visible label only on start date */}
-              {isStartDate && (
+              return (
                 <Box
+                  key={reservation.id}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigate(`/reservations/${reservation.id}`);
+                  }}
                   sx={{
                     position: 'absolute',
-                    left: '50%',
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
-                    border: '1px solid',
-                    borderColor: reservation.status === 'cancelled' ? '#ef5350' : '#90caf9',
-                    borderRadius: '4px',
+                    left: 0,
+                    top: '20%',
+                    height: '60%',
+                    width: '100%',
+                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '4px 8px',
-                    overflow: 'hidden',
-                    pointerEvents: 'none', // Let clicks go through to the overlay
-                    // Extend beyond the cell
-                    width: `${(differenceInDays(new Date(reservation.end), date) + 1) * 100}%`,
+                    zIndex: 1000,
+                    pointerEvents: 'auto',
+                    '&:hover': {
+                      '& .reservation-overlay': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                      }
+                    },
                   }}
                 >
-                  <Typography noWrap>
-                    {reservation.guestName}
-                  </Typography>
+                  {/* Transparent overlay for hover and click */}
+                  <Box
+                    className="reservation-overlay"
+                    sx={{
+                      position: 'absolute',
+                      left: isStartDate ? '50%' : 0,
+                      right: isEndDate ? '50%' : 0,
+                      top: 0,
+                      bottom: 0,
+                      backgroundColor: 'transparent',
+                      borderTop: `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}`,
+                      borderBottom: `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}`,
+                      borderLeft: isStartDate ? `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}` : 'none',
+                      borderRight: isEndDate ? `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}` : 'none',
+                      transition: 'background-color 0.2s',
+                    }}
+                  />
+                  
+                  {/* Visible label only on start date */}
+                  {isStartDate && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        left: '50%',
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
+                        border: '1px solid',
+                        borderColor: reservation.status === 'cancelled' ? '#ef5350' : '#90caf9',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '4px 8px',
+                        overflow: 'hidden',
+                        pointerEvents: 'none', // Let clicks go through to the overlay
+                        // Extend beyond the cell
+                        width: `${(differenceInDays(new Date(reservation.end), date) + 1) * 100}%`,
+                      }}
+                    >
+                      <Typography noWrap>
+                        {reservation.guestName}
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
-              )}
-            </Box>
-          );
-        });
+              );
+            })}
+            {isInDragRange && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: format(date, 'yyyy-MM-dd') === format(dragState.startDate!, 'yyyy-MM-dd') ? '50%' : 0,
+                  right: format(date, 'yyyy-MM-dd') === format(dragState.endDate!, 'yyyy-MM-dd') ? '50%' : 0,
+                  top: '20%',
+                  height: '60%',
+                  backgroundColor: 'rgba(144, 202, 249, 0.2)',
+                  border: '2px dashed #90caf9',
+                  borderRadius: '4px',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+          </>
+        );
       }
     }))
   ];
+
+  const handleCellMouseDown = (params: GridRenderCellParams) => {
+    if (params.field === 'name') return;
+    
+    setDragState({
+      active: true,
+      startDate: parseISO(params.field as string),
+      endDate: parseISO(params.field as string),
+      roomId: params.row.id
+    });
+  };
+
+  const handleCellMouseEnter = (params: GridRenderCellParams) => {
+    if (!dragState.active || params.field === 'name' || params.row.id !== dragState.roomId) return;
+
+    const currentDate = parseISO(params.field as string);
+    setDragState(prev => ({
+      ...prev,
+      endDate: currentDate
+    }));
+  };
+
+  const handleCellMouseUp = () => {
+    if (!dragState.active || !dragState.startDate || !dragState.endDate) return;
+
+    // Ensure start date is before end date
+    const finalStartDate = dragState.startDate < dragState.endDate ? dragState.startDate : dragState.endDate;
+    const finalEndDate = dragState.startDate < dragState.endDate ? dragState.endDate : dragState.startDate;
+
+    // Navigate to new reservation page with pre-populated dates
+    navigate(`/reservations/new?roomId=${dragState.roomId}&startDate=${format(finalStartDate, 'yyyy-MM-dd')}&endDate=${format(finalEndDate, 'yyyy-MM-dd')}`);
+
+    setDragState({
+      active: false,
+      startDate: null,
+      endDate: null,
+      roomId: null
+    });
+  };
 
   // Prepare rows data
   const rows = rooms.map(room => ({
@@ -265,17 +344,15 @@ export default function ReservationGrid() {
         <Typography>
           {format(startDate, 'MMM d')} - {format(endDate, 'MMM d, yyyy')}
         </Typography>
+        <Box sx={{ flex: 1 }} />
+        <ButtonGroup variant="outlined" size="small">
+          <Button onClick={() => navigate(`/properties/${id}/grid`)}>Grid View</Button>
+          <Button onClick={() => navigate(`/properties/${id}/calendar`)}>Calendar View</Button>
+          <Button onClick={() => navigate(`/properties/${id}/daypilot`)}>DayPilot View</Button>
+          <Button onClick={() => navigate(`/properties/${id}/react-calendar`)}>React Calendar</Button>
+        </ButtonGroup>
       </Box>
-      <Box sx={{ flex: 1 }}
-        onClick={(e) => {
-          console.log('Container clicked:', {
-            mouseX: e.clientX,
-            mouseY: e.clientY,
-            target: e.target,
-            currentTarget: e.currentTarget
-          });
-        }}
-      >
+      <Box sx={{ flex: 1 }}>
         <DataGrid
           rows={rows}
           columns={columns}
@@ -283,23 +360,9 @@ export default function ReservationGrid() {
           disableRowSelectionOnClick
           disableColumnMenu
           rowHeight={60}
-          onClick={(e) => {
-            console.log('Grid clicked:', {
-              mouseX: e.clientX,
-              mouseY: e.clientY,
-              target: e.target,
-              currentTarget: e.currentTarget
-            });
-          }}
-          onCellClick={(params, event) => {
-            console.log('Cell clicked:', {
-              rowId: params.id,
-              field: params.field,
-              mouseX: event.clientX,
-              mouseY: event.clientY,
-              target: event.target,
-            });
-          }}
+          onCellMouseDown={(params) => handleCellMouseDown(params)}
+          onCellMouseEnter={(params) => handleCellMouseEnter(params)}
+          onCellMouseUp={handleCellMouseUp}
           sx={{
             '& .MuiDataGrid-cell': {
               borderRight: '1px solid rgba(224, 224, 224, 1)',
@@ -308,6 +371,7 @@ export default function ReservationGrid() {
               overflow: 'visible !important',
               cursor: 'pointer',
               zIndex: 1,
+              userSelect: 'none',
               '& > *': {
                 overflow: 'visible !important',
                 position: 'relative',

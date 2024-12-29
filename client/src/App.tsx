@@ -8,6 +8,9 @@ import Guests from './pages/Guests'
 import Reservations from './pages/Reservations'
 import Reports from './pages/Reports'
 import ReservationGrid from './pages/ReservationGrid'
+import ReservationGridFC from './pages/ReservationGridFC'
+import ReservationGridDP from './pages/ReservationGridDP'
+import ReservationGridRC from './pages/ReservationGridRC'
 import ReservationDetails from './pages/ReservationDetails'
 
 function App() {
@@ -19,6 +22,9 @@ function App() {
           <Route path="properties" element={<Properties />} />
           <Route path="properties/:id" element={<PropertyDetails />} />
           <Route path="properties/:id/grid" element={<ReservationGrid />} />
+          <Route path="properties/:id/calendar" element={<ReservationGridFC />} />
+          <Route path="properties/:id/daypilot" element={<ReservationGridDP />} />
+          <Route path="properties/:id/react-calendar" element={<ReservationGridRC />} />
           <Route path="properties/:id/reservations" element={<ReservationGrid />} /> {/* Add this for backward compatibility */}
           <Route path="guests" element={<Guests />} />
           <Route path="reservations" element={<Reservations />} />
