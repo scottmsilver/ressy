@@ -179,9 +179,8 @@ export default function ReservationGrid() {
             }}
             sx={{
               position: 'absolute',
-              left: '0',
-              width: `calc(${daysDiff * 100}% + 50%)`,
-              marginLeft: '50%',
+              left: '50%',
+              width: `calc(${daysDiff * 100}% - 50%)`,
               height: '60%',
               top: '20%',
               backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
@@ -192,7 +191,6 @@ export default function ReservationGrid() {
               display: 'flex',
               alignItems: 'center',
               padding: '4px 8px',
-              overflow: 'hidden',
               zIndex: 2,
               '&:hover': {
                 filter: 'brightness(0.95)',
@@ -255,6 +253,9 @@ export default function ReservationGrid() {
               overflow: 'visible !important',
               cursor: 'pointer',
               zIndex: 1,
+              '& > *': {
+                overflow: 'visible !important',
+              }
             },
             '& .MuiDataGrid-columnHeader': {
               borderRight: '1px solid rgba(224, 224, 224, 1)',
