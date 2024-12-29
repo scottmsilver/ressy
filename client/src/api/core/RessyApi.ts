@@ -26,7 +26,7 @@ export interface PropertyReservationsResponse {
 export class RessyApi {
   private baseURL: string;
 
-  constructor(baseURL: string = 'http://localhost:8000/api') {
+  constructor(baseURL: string = 'http://localhost:8000') {
     this.baseURL = baseURL;
   }
 

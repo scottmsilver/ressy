@@ -1,135 +1,183 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  Box,
-  Paper,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  IconButton,
-  Stack,
-  TextField,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { Box, CircularProgress, IconButton, Typography, Button, ButtonGroup } from '@mui/material';
+import { DataGrid, GridColDef, GridValueGetterParams } from '@mui/x-data-grid';
 import { ChevronLeft, ChevronRight } from '@mui/icons-material';
-import { format, addDays, eachDayOfInterval, startOfDay } from 'date-fns';
-import { api } from '../api';
-import type { PropertyReservation } from '../api/core/RessyApi';
+import { format, startOfDay, addDays, subDays, eachDayOfInterval } from 'date-fns';
+import { RessyApi } from '../api/core/RessyApi';
+import { Room } from '../api/core/types';
 
-interface RoomRow {
-  buildingId: number;
+const api = new RessyApi('http://localhost:8000');
+
+interface RoomRow extends Room {
   buildingName: string;
-  roomId: number;
-  roomName: string;
-  roomNumber: string;
 }
 
-interface ReservationCell {
-  guestId?: number;
-  guestName?: string;
-  status?: string;
+interface ReservationEvent {
+  id: string;
+  guestName: string;
+  start: Date;
+  end: Date;
+  roomId: number;
+  status: string;
+}
+
+interface GridRow {
+  id: number;
+  name: string;
+  room_number: string;
+  buildingName: string;
 }
 
 export default function ReservationGrid() {
   const { id } = useParams<{ id: string }>();
   const [startDate, setStartDate] = useState<Date>(startOfDay(new Date()));
-  const [endDate, setEndDate] = useState<Date>(startOfDay(addDays(new Date(), 6)));
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<Date>(addDays(startOfDay(new Date()), 6)); // Show 7 days by default
   const [rooms, setRooms] = useState<RoomRow[]>([]);
-  const [reservations, setReservations] = useState<Map<string, ReservationCell>>(new Map());
-
-  // Generate array of dates between start and end
-  const dateRange = eachDayOfInterval({ start: startDate, end: endDate });
+  const [events, setEvents] = useState<ReservationEvent[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
-    fetchReservations();
+    
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // First get the property to get all buildings and rooms
+        const property = await api.getProperty(parseInt(id));
+        
+        // Flatten all rooms from all buildings
+        const allRooms = property.buildings.flatMap(building => 
+          building.rooms.map(room => ({
+            ...room,
+            buildingName: building.name,
+          }))
+        );
+        setRooms(allRooms);
+
+        // Get reservations
+        const reservationsData = await api.getPropertyReservations(
+          parseInt(id),
+          format(startDate, 'yyyy-MM-dd'),
+          format(endDate, 'yyyy-MM-dd')
+        );
+
+        const calendarEvents = reservationsData.reservations.map(res => ({
+          id: `${res.room_id}-${res.guest_id}`,
+          guestName: res.guest_name,
+          start: new Date(res.start_date),
+          end: new Date(res.end_date),
+          roomId: res.room_id,
+          status: res.status,
+        }));
+        
+        setEvents(calendarEvents);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, [id, startDate, endDate]);
 
-  const fetchReservations = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // First, fetch the property to get all buildings
-      const property = await api.getProperty(parseInt(id!));
-      
-      // Fetch all rooms for each building
-      const allRooms: RoomRow[] = [];
-      for (const building of property.buildings) {
-        const rooms = await api.listRooms(building.id);
-        rooms.forEach(room => {
-          allRooms.push({
-            buildingId: building.id,
-            buildingName: building.name,
-            roomId: room.id,
-            roomName: room.name,
-            roomNumber: room.room_number,
-          });
-        });
+  const moveDates = (days: number) => {
+    setStartDate(prev => addDays(prev, days));
+    setEndDate(prev => addDays(prev, days));
+  };
+
+  // Generate dates for columns
+  const dates = eachDayOfInterval({ start: startDate, end: endDate });
+  
+  // Create columns configuration
+  const columns: GridColDef<GridRow>[] = [
+    { 
+      field: 'name',
+      headerName: 'Room',
+      width: 250,
+      renderCell: (params: GridValueGetterParams<any, GridRow>) => {
+        const row = params.row;
+        return row ? (
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+              {row.buildingName}
+            </Typography>
+            <Typography variant="body2">
+              {row.name} ({row.room_number})
+            </Typography>
+          </Box>
+        ) : null;
+      },
+    },
+    ...dates.map((date, index) => ({
+      field: format(date, 'yyyy-MM-dd'),
+      headerName: format(date, 'MMM d'),
+      renderHeader: () => (
+        <div>
+          <div>{format(date, 'MMM d')}</div>
+          <div style={{ fontSize: '0.8em', color: '#666' }}>{format(date, 'EEE')}</div>
+        </div>
+      ),
+      cellClassName: 'reservation-cell',
+      renderCell: (params: GridValueGetterParams<any, GridRow>) => {
+        const reservation = events.find(event => 
+          event.roomId === params.row.id && 
+          format(event.start, 'yyyy-MM-dd') <= format(date, 'yyyy-MM-dd') &&
+          format(event.end, 'yyyy-MM-dd') >= format(date, 'yyyy-MM-dd')
+        );
+
+        // Only render the cell content for the start date
+        const isStartDate = reservation && format(reservation.start, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
+        if (!reservation || !isStartDate) return null;
+
+        // Calculate the number of days this reservation spans
+        const startDate = reservation.start;
+        const endDate = reservation.end;
+        const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const columnIndex = dates.findIndex(d => format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
+
+        return (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: 0,
+              height: 'calc(100% - 8px)',
+              width: `calc(${daysDiff * 100}% - 8px)`,
+              top: '4px',
+              backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e8f5e9',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 8px',
+              borderRadius: '4px',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+              zIndex: 1,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              '&:hover': {
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                transform: 'translateY(-1px)',
+              },
+            }}
+          >
+            <Typography noWrap>
+              {reservation.guestName}
+            </Typography>
+          </Box>
+        );
       }
-      
-      // Sort rooms by building name and room number
-      setRooms(allRooms.sort((a, b) => 
-        a.buildingName.localeCompare(b.buildingName) || 
-        a.roomNumber.localeCompare(b.roomNumber)
-      ));
+    }))
+  ];
 
-      // Fetch and process reservations
-      const reservationData = await api.getPropertyReservations(
-        parseInt(id!),
-        format(startDate, 'yyyy-MM-dd'),
-        format(endDate, 'yyyy-MM-dd')
-      );
-
-      // Process reservations
-      const reservationMap = new Map<string, ReservationCell>();
-      reservationData.reservations.forEach((res) => {
-        const start = new Date(res.start_date);
-        const end = new Date(res.end_date);
-        
-        eachDayOfInterval({ start, end }).forEach((date) => {
-          const key = `${res.room_id}-${format(date, 'yyyy-MM-dd')}`;
-          reservationMap.set(key, {
-            guestId: res.guest_id,
-            guestName: res.guest_name,
-            status: res.status,
-          });
-        });
-      });
-      setReservations(reservationMap);
-    } catch (err) {
-      console.error('Error fetching reservations:', err);
-      setError('Failed to fetch reservations');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePreviousWeek = () => {
-    setStartDate(prev => addDays(prev, -7));
-    setEndDate(prev => addDays(prev, -7));
-  };
-
-  const handleNextWeek = () => {
-    setStartDate(prev => addDays(prev, 7));
-    setEndDate(prev => addDays(prev, 7));
-  };
-
-  const getCellColor = (reservation?: ReservationCell): string => {
-    if (!reservation) return '#ffffff'; // Available
-    if (reservation.status === 'cancelled') return '#ffebee'; // Light red
-    return '#e8f5e9'; // Light green for occupied
-  };
+  // Prepare rows data
+  const rows = rooms.map(room => ({
+    id: room.id,
+    name: room.name,
+    room_number: room.room_number,
+    buildingName: room.buildingName,
+  }));
 
   if (loading && !rooms.length) {
     return (
@@ -140,100 +188,46 @@ export default function ReservationGrid() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 3 }}>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
-        <IconButton onClick={handlePreviousWeek}>
-          <ChevronLeft />
-        </IconButton>
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          <DatePicker
-            label="Start Date"
-            value={startDate}
-            onChange={(date) => date && setStartDate(startOfDay(date))}
-          />
-          <Typography sx={{ mx: 1 }}>to</Typography>
-          <DatePicker
-            label="End Date"
-            value={endDate}
-            onChange={(date) => date && setEndDate(startOfDay(date))}
-          />
-        </LocalizationProvider>
-        <IconButton onClick={handleNextWeek}>
-          <ChevronRight />
-        </IconButton>
-      </Stack>
-
-      <TableContainer component={Paper}>
-        <Table size="small" sx={{ minWidth: 800 }}>
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ fontWeight: 'bold', minWidth: 200 }}>Room</TableCell>
-              {dateRange.map((date) => (
-                <TableCell 
-                  key={date.toISOString()} 
-                  align="center"
-                  sx={{ 
-                    fontWeight: 'bold',
-                    minWidth: 120,
-                    bgcolor: 'grey.100'
-                  }}
-                >
-                  {format(date, 'MMM d')}
-                  <Typography variant="caption" display="block" color="text.secondary">
-                    {format(date, 'EEE')}
-                  </Typography>
-                </TableCell>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rooms.map((room) => (
-              <TableRow key={room.roomId}>
-                <TableCell 
-                  component="th" 
-                  scope="row"
-                  sx={{ 
-                    bgcolor: 'grey.50',
-                    borderRight: 1,
-                    borderColor: 'divider'
-                  }}
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    {room.buildingName}
-                  </Typography>
-                  <Typography>
-                    {room.roomName} ({room.roomNumber})
-                  </Typography>
-                </TableCell>
-                {dateRange.map((date) => {
-                  const key = `${room.roomId}-${format(date, 'yyyy-MM-dd')}`;
-                  const reservation = reservations.get(key);
-                  return (
-                    <TableCell 
-                      key={key}
-                      align="center"
-                      sx={{ 
-                        bgcolor: getCellColor(reservation),
-                        '&:hover': {
-                          bgcolor: 'action.hover',
-                        },
-                      }}
-                    >
-                      {reservation?.guestName && (
-                        <Typography variant="body2">
-                          {reservation.guestName}
-                        </Typography>
-                      )}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+    <Box sx={{ height: 'calc(100vh - 100px)', p: 2, display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, gap: 2 }}>
+        <ButtonGroup variant="outlined" size="small">
+          <Button onClick={() => moveDates(-3)}>-3 Days</Button>
+          <Button onClick={() => moveDates(-7)}>-Week</Button>
+          <Button onClick={() => moveDates(7)}>+Week</Button>
+          <Button onClick={() => moveDates(3)}>+3 Days</Button>
+        </ButtonGroup>
+        <Typography>
+          {format(startDate, 'MMM d')} - {format(endDate, 'MMM d, yyyy')}
+        </Typography>
+      </Box>
+      <Box sx={{ flex: 1 }}>
+        <DataGrid
+          rows={rows}
+          columns={columns}
+          hideFooter
+          disableRowSelectionOnClick
+          disableColumnMenu
+          rowHeight={60}
+          sx={{
+            '& .MuiDataGrid-cell': {
+              borderRight: '1px solid rgba(224, 224, 224, 1)',
+              position: 'relative',
+              padding: 0,
+              overflow: 'visible !important',
+            },
+            '& .MuiDataGrid-columnHeader': {
+              borderRight: '1px solid rgba(224, 224, 224, 1)',
+            },
+            '& .MuiDataGrid-row': {
+              position: 'relative',
+            },
+            '& .reservation-cell': {
+              padding: 0,
+              position: 'relative',
+            },
+          }}
+        />
+      </Box>
     </Box>
   );
 }
