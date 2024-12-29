@@ -56,12 +56,19 @@ export interface Guest extends Entity {
 }
 
 export interface Reservation extends Entity {
-  guestId: number;
-  roomId: number;
-  startDate: string;
-  endDate: string;
-  numGuests: number;
-  specialRequests?: string;
+  id: number;
+  guest_id: number;
+  guest_name: string;
+  guest_email?: string;
+  guest_phone?: string;
+  room_id: number;
+  room_name: string;
+  room_number: string;
+  building_id: number;
+  building_name: string;
+  start_date: string;
+  end_date: string;
+  notes?: string;
   status: 'confirmed' | 'cancelled' | 'pending';
 }
 
@@ -129,6 +136,25 @@ export interface RoomAvailabilityResponse {
     end_date: string;
     guest_name: string;
   }>;
+}
+
+export interface PropertyReservation {
+  reservation_id: number;
+  room_id: number;
+  room_name: string;
+  room_number: string;
+  building_id: number;
+  building_name: string;
+  guest_id: number;
+  guest_name: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+}
+
+export interface PropertyReservationsResponse {
+  total_rooms: number;
+  reservations: PropertyReservation[];
 }
 
 export interface ApiError {

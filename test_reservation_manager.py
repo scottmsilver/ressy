@@ -557,3 +557,39 @@ def test_get_guest_history_with_cancelled(test_db: Session, reservation_manager:
     assert len(history) == 2
     assert any(r.status == ReservationStatus.CANCELLED.value for r in history)
     assert any(r.status == ReservationStatus.CONFIRMED.value for r in history)
+
+def test_get_property_reservations(test_db: Session, reservation_manager: ReservationManager, test_property, test_guest):
+    """Test getting property reservations includes reservation IDs"""
+    # Arrange
+    property, _, room = test_property
+    guest = test_guest
+    start_date = date.today() + timedelta(days=1)
+    end_date = start_date + timedelta(days=3)
+
+    # Create a reservation
+    reservation = reservation_manager.create_reservation(
+        test_db,
+        guest.id,
+        room.id,
+        start_date,
+        end_date,
+        num_guests=2
+    )
+
+    # Get property reservations
+    result = reservation_manager.get_property_reservations(
+        test_db,
+        property.id,
+        start_date,
+        end_date
+    )
+
+    # Assert
+    assert result['total_rooms'] > 0
+    assert len(result['reservations']) == 1
+    res = result['reservations'][0]
+    assert res.id == reservation.id
+    assert res.room_id == room.id
+    assert res.guest_id == guest.id
+    assert res.start_date.date() == start_date
+    assert res.end_date.date() == end_date

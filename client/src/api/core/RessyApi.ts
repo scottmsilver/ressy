@@ -6,6 +6,7 @@ import {
 } from './types';
 
 export interface PropertyReservation {
+  reservation_id: number;
   room_id: number;
   room_name: string;
   room_number: string;
@@ -173,30 +174,27 @@ export class RessyApi {
     startDate: string,
     endDate: string
   ): Promise<PropertyReservationsResponse> {
-    try {
-      const params = new URLSearchParams({
-        start_date: startDate,
-        end_date: endDate,
-      });
+    const params = new URLSearchParams({
+      start_date: startDate,
+      end_date: endDate,
+    });
 
-      const response = await fetch(
-        `${this.baseURL}/properties/${propertyId}/reservations?${params.toString()}`,
-        {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    const response = await fetch(
+      `${this.baseURL}/properties/${propertyId}/reservations?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
       }
-      return await response.json();
-    } catch (error) {
-      console.error('Get property reservations error:', error);
-      throw error;
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    return await response.json();
   }
 
   // Building methods
@@ -531,22 +529,14 @@ export class RessyApi {
   }
 
   async getReservation(id: number): Promise<Reservation> {
-    try {
-      const response = await fetch(`${this.baseURL}/reservations/${id}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      return await response.json();
-    } catch (error) {
-      console.error('Get reservation error:', error);
-      throw error;
-    }
+    const response = await fetch(`${this.baseURL}/reservations/${id}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    });
+    return await response.json();
   }
 
   async cancelReservation(id: number): Promise<void> {

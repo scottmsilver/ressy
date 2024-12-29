@@ -13,7 +13,7 @@ from models import (
     PropertyCreate, PropertyResponse, BuildingCreate, BuildingResponse,
     RoomCreate, RoomResponse, BedResponse, GuestCreate, GuestResponse,
     ReservationCreate, ReservationResponse, Property, Building, Room, 
-    Guest, Reservation, BedType, BedSubType
+    Guest, Reservation, BedType, BedSubType, ReservationStatus,  # Added ReservationStatus import
 )
 from property_manager import PropertyManager
 from guest_manager import GuestManager
@@ -362,6 +362,7 @@ class PropertyForecastReport(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class PropertyReservationResponse(BaseModel):
+    reservation_id: int  # Add this field
     room_id: int
     room_name: str
     room_number: str
@@ -811,21 +812,15 @@ def check_room_availability(
                     Reservation.end_date <= end_date
                 )
             )
-        ).all()
+        ).first()
         
-        if not conflicts:
-            return {"available": True, "conflicts": None}
+        if conflicts:
+            raise HTTPException(
+                status_code=400,
+                detail="Room is not available for the selected dates"
+            )
         
-        return {
-            "available": False,
-            "conflicts": [
-                {
-                    "start_date": c.start_date,
-                    "end_date": c.end_date,
-                    "guest_name": c.guest.name
-                } for c in conflicts
-            ]
-        }
+        return {"available": True, "conflicts": None}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1414,20 +1409,18 @@ def get_property_reservations(
 ):
     """Get all reservations for a property in a date range"""
     try:
-        # Get the property with its buildings and rooms
+        # Get the property with all its buildings and rooms
         property = db.query(Property).filter(Property.id == property_id).first()
         if not property:
             raise HTTPException(status_code=404, detail="Property not found")
 
-        # Get all rooms in the property
-        rooms = []
-        total_rooms = 0
+        # Get all room IDs for this property
+        room_ids = []
         for building in property.buildings:
-            rooms.extend(building.rooms)
-            total_rooms += len(building.rooms)
+            for room in building.rooms:
+                room_ids.append(room.id)
 
-        # Get all reservations for these rooms in the date range
-        room_ids = [room.id for room in rooms]
+        # Query reservations for these rooms in the date range
         reservations = (
             db.query(Reservation)
             .join(Room)
@@ -1436,36 +1429,43 @@ def get_property_reservations(
             .filter(
                 Room.id.in_(room_ids),
                 Reservation.start_date <= end_date,
-                Reservation.end_date >= start_date
+                Reservation.end_date >= start_date,
+                Reservation.status != ReservationStatus.CANCELLED.value
             )
             .all()
         )
 
-        # Format the response
+        # Build response
         reservation_responses = []
         for res in reservations:
-            room = next(r for r in rooms if r.id == res.room_id)
-            building = next(b for b in property.buildings if b.id == room.building_id)
+            room = db.query(Room).filter(Room.id == res.room_id).first()
+            building = db.query(Building).filter(Building.id == room.building_id).first()
+            guest = db.query(Guest).filter(Guest.id == res.guest_id).first()
+            
+            # Convert datetime to date for the response
+            start_date = res.start_date.date() if isinstance(res.start_date, datetime) else res.start_date
+            end_date = res.end_date.date() if isinstance(res.end_date, datetime) else res.end_date
             
             reservation_responses.append(PropertyReservationResponse(
+                reservation_id=res.id,
                 room_id=room.id,
                 room_name=room.name,
                 room_number=room.room_number,
                 building_id=building.id,
                 building_name=building.name,
-                guest_id=res.guest_id,
-                guest_name=res.guest.name,
-                start_date=res.start_date,
-                end_date=res.end_date,
+                guest_id=guest.id,
+                guest_name=guest.name,
+                start_date=start_date,
+                end_date=end_date,
                 status=res.status
             ))
 
         return PropertyReservationsResponse(
-            total_rooms=total_rooms,
+            total_rooms=len(room_ids),
             reservations=reservation_responses
         )
-
     except Exception as e:
+        print(f"Error in get_property_reservations: {str(e)}")  # Add logging
         raise HTTPException(status_code=500, detail=str(e))
 
 # Health check endpoint

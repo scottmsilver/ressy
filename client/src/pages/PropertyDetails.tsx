@@ -555,7 +555,7 @@ export default function PropertyDetails() {
               <Button
                 variant="contained"
                 color="secondary"
-                onClick={() => navigate(`/properties/${id}/reservations`)}
+                onClick={() => navigate(`/properties/${id}/grid`)}
               >
                 View Reservation Grid
               </Button>

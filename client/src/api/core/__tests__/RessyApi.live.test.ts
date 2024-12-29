@@ -151,5 +151,47 @@ describe('RessyApi Live Tests', () => {
       expect(remainingBeds).toHaveLength(2)
       expect(remainingBeds.find(b => b.id === beds[0].id)).toBeUndefined()
     })
+
+    it('should create and query reservations', async () => {
+      // Create a guest first
+      const guest = await api.createGuest({
+        name: 'Test Guest',
+        email: 'test@example.com'
+      });
+      expect(guest).toBeDefined();
+      expect(guest.id).toBeDefined();
+
+      // Create a reservation
+      const startDate = '2024-12-28';
+      const endDate = '2024-12-29';
+      const reservation = await api.createReservation({
+        guest_id: guest.id,
+        room_id: createdRoomId,
+        start_date: startDate,
+        end_date: endDate,
+        num_guests: 2
+      });
+      expect(reservation).toBeDefined();
+      expect(reservation.id).toBeDefined();
+
+      // Query property reservations
+      const propertyReservations = await api.getPropertyReservations(
+        buildingId,
+        startDate,
+        endDate
+      );
+      console.log('Property Reservations Response:', JSON.stringify(propertyReservations, null, 2));
+      
+      expect(propertyReservations).toBeDefined();
+      expect(propertyReservations.reservations).toBeDefined();
+      expect(propertyReservations.reservations.length).toBeGreaterThan(0);
+      
+      const firstReservation = propertyReservations.reservations[0];
+      expect(firstReservation).toBeDefined();
+      expect(firstReservation.reservation_id || firstReservation.id).toBeDefined();
+      expect(firstReservation.guest_name).toBeDefined();
+      expect(firstReservation.start_date).toBeDefined();
+      expect(firstReservation.end_date).toBeDefined();
+    });
   })
 })

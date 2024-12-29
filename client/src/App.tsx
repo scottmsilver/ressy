@@ -8,6 +8,7 @@ import Guests from './pages/Guests'
 import Reservations from './pages/Reservations'
 import Reports from './pages/Reports'
 import ReservationGrid from './pages/ReservationGrid'
+import ReservationDetails from './pages/ReservationDetails'
 
 function App() {
   return (
@@ -17,9 +18,11 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="properties" element={<Properties />} />
           <Route path="properties/:id" element={<PropertyDetails />} />
-          <Route path="properties/:id/reservations" element={<ReservationGrid />} />
+          <Route path="properties/:id/grid" element={<ReservationGrid />} />
+          <Route path="properties/:id/reservations" element={<ReservationGrid />} /> {/* Add this for backward compatibility */}
           <Route path="guests" element={<Guests />} />
           <Route path="reservations" element={<Reservations />} />
+          <Route path="reservations/:id" element={<ReservationDetails />} />
           <Route path="reports" element={<Reports />} />
         </Route>
       </Routes>

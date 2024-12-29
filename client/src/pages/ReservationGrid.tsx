@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Box, CircularProgress, IconButton, Typography, Button, ButtonGroup } from '@mui/material';
 import { DataGrid, GridColDef, GridValueGetterParams } from '@mui/x-data-grid';
 import { ChevronLeft, ChevronRight } from '@mui/icons-material';
@@ -14,11 +14,15 @@ interface RoomRow extends Room {
 }
 
 interface ReservationEvent {
-  id: string;
+  id: number;
   guestName: string;
   start: Date;
   end: Date;
   roomId: number;
+  roomName: string;
+  roomNumber: string;
+  buildingName: string;
+  guestId: number;
   status: string;
 }
 
@@ -31,6 +35,7 @@ interface GridRow {
 
 export default function ReservationGrid() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [startDate, setStartDate] = useState<Date>(startOfDay(new Date()));
   const [endDate, setEndDate] = useState<Date>(addDays(startOfDay(new Date()), 6)); // Show 7 days by default
   const [rooms, setRooms] = useState<RoomRow[]>([]);
@@ -62,14 +67,24 @@ export default function ReservationGrid() {
           format(endDate, 'yyyy-MM-dd')
         );
 
-        const calendarEvents = reservationsData.reservations.map(res => ({
-          id: `${res.room_id}-${res.guest_id}`,
-          guestName: res.guest_name,
-          start: new Date(res.start_date),
-          end: new Date(res.end_date),
-          roomId: res.room_id,
-          status: res.status,
-        }));
+        // Log the full response to see its structure
+        console.log('Full reservations response:', JSON.stringify(reservationsData, null, 2));
+
+        // Build response
+        const calendarEvents = reservationsData.reservations.map(res => {
+          return {
+            id: res.reservation_id,
+            guestName: res.guest_name,
+            start: new Date(res.start_date),
+            end: new Date(res.end_date),
+            roomId: res.room_id,
+            roomName: res.room_name,
+            roomNumber: res.room_number,
+            buildingName: res.building_name,
+            guestId: res.guest_id,
+            status: res.status,
+          };
+        });
         
         setEvents(calendarEvents);
       } catch (error) {
@@ -137,8 +152,13 @@ export default function ReservationGrid() {
         const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         const columnIndex = dates.findIndex(d => format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
 
+        const handleReservationClick = (reservation: ReservationEvent) => {
+          navigate(`/reservations/${reservation.id}`);
+        };
+
         return (
           <Box
+            onClick={() => handleReservationClick(reservation)}
             sx={{
               position: 'absolute',
               left: 0,

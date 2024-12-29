@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func, cast, Date
-from models import Reservation, Room, Guest, ReservationStatus, Bed, BedType
+from models import Reservation, Room, Guest, ReservationStatus, Bed, BedType, Building
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 
@@ -117,3 +117,38 @@ class ReservationManager:
         return session.query(Reservation).filter(
             Reservation.guest_id == guest_id
         ).order_by(Reservation.start_date.desc()).all()
+
+    def get_property_reservations(
+        self,
+        session: Session,
+        property_id: int,
+        start_date: date,
+        end_date: date
+    ) -> Dict:
+        """Get all reservations for a property in a date range"""
+        # Get all rooms in the property
+        rooms = (
+            session.query(Room)
+            .join(Building)
+            .filter(Building.property_id == property_id)
+            .all()
+        )
+
+        room_ids = [room.id for room in rooms]
+
+        # Get reservations for these rooms
+        reservations = (
+            session.query(Reservation)
+            .filter(
+                Reservation.room_id.in_(room_ids),
+                Reservation.start_date <= end_date,
+                Reservation.end_date >= start_date,
+                Reservation.status != ReservationStatus.CANCELLED.value
+            )
+            .all()
+        )
+
+        return {
+            'total_rooms': len(room_ids),
+            'reservations': reservations
+        }
