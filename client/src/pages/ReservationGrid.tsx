@@ -179,9 +179,11 @@ export default function ReservationGrid() {
             }}
             sx={{
               position: 'absolute',
-              left: '50%',
-              right: '-50%',
-              height: '100%',
+              left: '0',
+              width: `calc(${daysDiff * 100}% + 50%)`,
+              marginLeft: '50%',
+              height: '60%',
+              top: '20%',
               backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
               border: '1px solid',
               borderColor: reservation.status === 'cancelled' ? '#ef5350' : '#90caf9',
@@ -191,7 +193,7 @@ export default function ReservationGrid() {
               alignItems: 'center',
               padding: '4px 8px',
               overflow: 'hidden',
-              zIndex: 2,  // Ensure reservations are above grid cells
+              zIndex: 2,
               '&:hover': {
                 filter: 'brightness(0.95)',
               },
