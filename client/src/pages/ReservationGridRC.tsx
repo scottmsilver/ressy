@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Box, CircularProgress, Typography, Button, ButtonGroup, Paper } from '@mui/material';
 import { format, startOfDay, addDays, eachDayOfInterval } from 'date-fns';
 import { RessyApi } from '../api/core/RessyApi';
+import ReservationDialog from '../components/ReservationDialog';
+import type { CreateReservationRequest } from '../api';
 
 const api = new RessyApi('http://localhost:8000');
 
@@ -28,59 +30,62 @@ interface Reservation {
 export default function ReservationGridRC() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState<Date>(startOfDay(new Date()));
   const [endDate, setEndDate] = useState<Date>(addDays(startOfDay(new Date()), 6));
-  const [loading, setLoading] = useState(true);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedCell, setSelectedCell] = useState<{ roomId?: string; date?: Date }>({});
+  const [dragStart, setDragStart] = useState<{ roomId: string; date: Date } | null>(null);
+  const [dragEnd, setDragEnd] = useState<{ roomId: string; date: Date } | null>(null);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [initialReservation, setInitialReservation] = useState<Partial<CreateReservationRequest>>({});
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!id) return;
     
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        // First get the property to get all buildings and rooms
-        const property = await api.getProperty(parseInt(id));
-        
-        // Flatten rooms with building info
-        const allRooms = property.buildings.flatMap(building => 
-          building.rooms.map(room => ({
-            id: room.id.toString(),
-            name: room.name,
-            roomNumber: room.room_number,
-            buildingName: building.name
-          }))
-        );
-        setRooms(allRooms);
+    setLoading(true);
+    try {
+      // First get the property to get all buildings and rooms
+      const property = await api.getProperty(parseInt(id));
+      
+      // Flatten rooms with building info
+      const allRooms = property.buildings.flatMap(building => 
+        building.rooms.map(room => ({
+          id: room.id.toString(),
+          name: room.name,
+          roomNumber: room.room_number,
+          buildingName: building.name
+        }))
+      );
+      setRooms(allRooms);
 
-        // Get reservations
-        const reservationsData = await api.getPropertyReservations(
-          parseInt(id),
-          format(startDate, 'yyyy-MM-dd'),
-          format(endDate, 'yyyy-MM-dd')
-        );
+      // Then get reservations for the current date range
+      const reservationsData = await api.getPropertyReservations(
+        parseInt(id),
+        format(startDate, 'yyyy-MM-dd'),
+        format(endDate, 'yyyy-MM-dd')
+      );
+      
+      setReservations(reservationsData.reservations.map(res => ({
+        id: res.reservation_id.toString(),
+        roomId: res.room_id.toString(),
+        title: res.guest_name,
+        start: res.start_date,
+        end: res.end_date,
+        status: res.status,
+        guestId: res.guest_id,
+        buildingName: res.building_name,
+        roomName: res.room_name
+      })));
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        const reservationsList = reservationsData.reservations.map(res => ({
-          id: res.reservation_id.toString(),
-          roomId: res.room_id.toString(),
-          title: res.guest_name,
-          start: res.start_date,
-          end: res.end_date,
-          status: res.status,
-          guestId: res.guest_id,
-          buildingName: res.building_name,
-          roomName: res.room_name
-        }));
-        setReservations(reservationsList);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+  useEffect(() => {
     fetchData();
   }, [id, startDate, endDate]);
 
@@ -95,6 +100,47 @@ export default function ReservationGridRC() {
     } else {
       setSelectedCell({ roomId, date });
     }
+  };
+
+  const handleCellMouseDown = (roomId: string, date: Date, e: React.MouseEvent) => {
+    if (e.button === 0) { // Left click only
+      setDragStart({ roomId, date });
+      setDragEnd({ roomId, date });
+    }
+  };
+
+  const handleCellMouseMove = (roomId: string, date: Date) => {
+    if (dragStart) {
+      setDragEnd({ roomId: dragStart.roomId, date });
+    }
+  };
+
+  const handleCellMouseUp = () => {
+    if (dragStart && dragEnd) {
+      const startDate = dragStart.date < dragEnd.date ? dragStart.date : dragEnd.date;
+      const endDate = dragStart.date < dragEnd.date ? dragEnd.date : dragStart.date;
+      
+      // Reset drag state
+      setDragStart(null);
+      setDragEnd(null);
+
+      // Find the room and its property
+      const room = rooms.find(r => r.id === dragStart.roomId);
+      
+      // Open dialog with pre-filled data
+      setInitialReservation({
+        room_id: dragStart.roomId,
+        property_id: id,
+        start_date: format(startOfDay(startDate), 'yyyy-MM-dd'),
+        end_date: format(startOfDay(addDays(endDate, 1)), 'yyyy-MM-dd')
+      });
+      setOpenDialog(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setDragStart(null);
+    setDragEnd(null);
   };
 
   if (loading) {
@@ -128,7 +174,7 @@ export default function ReservationGridRC() {
         </ButtonGroup>
       </Box>
       
-      <Paper sx={{ flex: 1, p: 1, overflow: 'auto' }}>
+      <Paper sx={{ flex: 1, p: 1, overflow: 'auto' }} onMouseLeave={handleMouseLeave}>
         <Box sx={{ 
           display: 'grid', 
           gridTemplateColumns: 'minmax(200px, auto) repeat(7, 1fr)', 
@@ -186,10 +232,18 @@ export default function ReservationGridRC() {
                 <Box 
                   key={day.toISOString()}
                   onClick={() => handleCellClick(room.id, day)}
+                  onMouseDown={(e) => handleCellMouseDown(room.id, day, e)}
+                  onMouseMove={() => handleCellMouseMove(room.id, day)}
+                  onMouseUp={handleCellMouseUp}
                   sx={{ 
                     borderBottom: 1,
                     borderColor: 'divider',
                     cursor: 'pointer',
+                    bgcolor: dragStart && dragEnd && room.id === dragStart.roomId && 
+                      day >= (dragStart.date < dragEnd.date ? dragStart.date : dragEnd.date) && 
+                      day <= (dragStart.date < dragEnd.date ? dragEnd.date : dragStart.date)
+                      ? 'action.selected'
+                      : 'inherit',
                     '&:hover': {
                       bgcolor: 'action.hover'
                     }
@@ -278,6 +332,24 @@ export default function ReservationGridRC() {
           ))}
         </Box>
       </Paper>
+
+      <ReservationDialog
+        open={openDialog}
+        onClose={() => setOpenDialog(false)}
+        initialReservation={initialReservation}
+        onSave={async (reservation) => {
+          try {
+            await api.createReservation(reservation);
+            // Refresh the data to get the updated reservations
+            await fetchData();
+            setOpenDialog(false);
+          } catch (err: any) {
+            console.error('Error creating reservation:', err);
+            // Let the dialog handle the error
+            throw err;
+          }
+        }}
+      />
     </Box>
   );
 }
