@@ -515,9 +515,14 @@ export class RessyApi {
         },
         body: JSON.stringify(data),
       });
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        const errorMessage = errorData.detail || 
+          (Array.isArray(errorData) ? errorData.map(e => e.msg).join(', ') : 'Failed to create reservation');
+        throw new Error(errorMessage);
       }
+      
       return await response.json();
     } catch (error) {
       console.error('Create reservation error:', error);

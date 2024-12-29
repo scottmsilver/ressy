@@ -12,27 +12,33 @@ import {
   TextField,
   Typography,
   MenuItem,
+  Alert,
 } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers'
 import { Add as AddIcon } from '@mui/icons-material'
 import { api } from '../api'
-import type { Reservation, Guest, Room, CreateReservationRequest } from '../api'
+import type { Reservation, Guest, Room, CreateReservationRequest, Property, Building } from '../api'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 export default function Reservations() {
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
+  const [buildings, setBuildings] = useState<Building[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [newReservation, setNewReservation] = useState<Partial<CreateReservationRequest>>({
-    guestId: '',
-    roomId: '',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    numGuests: 1,
+    guest_id: '',
+    room_id: '',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    num_guests: 1,
+    special_requests: ''
   })
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('')
 
   useEffect(() => {
     fetchInitialData()
@@ -41,12 +47,12 @@ export default function Reservations() {
   const fetchInitialData = async () => {
     try {
       setLoading(true)
-      const [guestsData, roomsData] = await Promise.all([
+      const [guestsData, propertiesData] = await Promise.all([
         api.searchGuests({}),
-        api.listRooms(1), // TODO: Replace with proper building ID
+        api.listProperties(),
       ])
       setGuests(guestsData)
-      setRooms(roomsData)
+      setProperties(propertiesData)
       setError(null)
     } catch (err) {
       setError('Failed to load initial data')
@@ -56,47 +62,92 @@ export default function Reservations() {
     }
   }
 
+  const fetchPropertyRooms = async (propertyId: string) => {
+    try {
+      setLoading(true)
+      const property = await api.getProperty(Number(propertyId))
+      setBuildings(property.buildings)
+      
+      // Collect all rooms from all buildings
+      const allRooms = property.buildings.flatMap(building => 
+        building.rooms.map(room => ({
+          ...room,
+          buildingName: building.name,
+          buildingId: building.id
+        }))
+      )
+      setRooms(allRooms)
+    } catch (err) {
+      setError('Failed to load rooms')
+      console.error('Error fetching rooms:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (selectedPropertyId) {
+      fetchPropertyRooms(selectedPropertyId)
+    }
+  }, [selectedPropertyId])
+
   const handleCreateReservation = async () => {
-    if (!newReservation.guestId || !newReservation.roomId) {
+    if (!newReservation.guest_id || !newReservation.room_id) {
       setError('Please select both guest and room')
       return
     }
 
     try {
       const reservation = await api.createReservation({
-        guestId: Number(newReservation.guestId),
-        roomId: Number(newReservation.roomId),
-        startDate: newReservation.startDate!,
-        endDate: newReservation.endDate!,
-        numGuests: newReservation.numGuests!,
+        guest_id: Number(newReservation.guest_id),
+        room_id: Number(newReservation.room_id),
+        start_date: newReservation.start_date!,  // Send date as YYYY-MM-DD string
+        end_date: newReservation.end_date!,      // Send date as YYYY-MM-DD string
+        num_guests: newReservation.num_guests!,
+        special_requests: newReservation.special_requests
       })
+      
       setReservations([...reservations, reservation])
-      setOpenDialog(false)
-      setNewReservation({
-        guestId: '',
-        roomId: '',
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-        numGuests: 1,
-      })
+      
+      // Show success message
+      const guest = guests.find(g => g.id === Number(newReservation.guest_id))
+      const room = rooms.find(r => r.id === Number(newReservation.room_id))
+      const building = buildings.find(b => b.id === room?.buildingId)
+      
+      setSuccessMessage(
+        `Reservation created successfully!\n\n` +
+        `Guest: ${guest?.name}\n` +
+        `Building: ${building?.name}\n` +
+        `Room: ${room?.name} (${room?.room_number})\n` +
+        `Dates: ${new Date(newReservation.start_date!).toLocaleDateString()} - ${new Date(newReservation.end_date!).toLocaleDateString()}\n` +
+        `Number of Guests: ${newReservation.num_guests}`
+      )
+      
+      // Don't close dialog, let user review the success message
       setError(null)
-    } catch (err) {
-      setError('Failed to create reservation')
+    } catch (err: any) {
+      if (err.response) {
+        // If we have a response from the server, use its error message
+        const errorDetail = await err.response.json();
+        setError(errorDetail.detail || 'Failed to create reservation');
+      } else {
+        setError('Failed to create reservation');
+      }
       console.error('Error creating reservation:', err)
     }
   }
 
   const handleCheckAvailability = async () => {
-    if (!newReservation.roomId) {
+    if (!newReservation.room_id) {
       setError('Please select a room first')
       return
     }
 
     try {
       const availability = await api.checkRoomAvailability(
-        Number(newReservation.roomId),
-        newReservation.startDate!,
-        newReservation.endDate!
+        Number(newReservation.room_id),
+        newReservation.start_date!,  // Send date as YYYY-MM-DD string
+        newReservation.end_date!     // Send date as YYYY-MM-DD string
       )
       
       if (!availability.available) {
@@ -169,10 +220,67 @@ export default function Reservations() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, my: 1 }}>
             <TextField
               select
+              label="Property"
+              fullWidth
+              value={selectedPropertyId}
+              onChange={(e) => {
+                setSelectedPropertyId(e.target.value)
+                setNewReservation({ ...newReservation, room_id: '' }) // Reset room selection
+              }}
+            >
+              <MenuItem value="">
+                <em>Select a property</em>
+              </MenuItem>
+              {properties.map((property) => (
+                <MenuItem key={property.id} value={property.id}>
+                  {property.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              label="Room"
+              fullWidth
+              value={newReservation.room_id}
+              onChange={(e) => setNewReservation({ ...newReservation, room_id: e.target.value })}
+              disabled={!selectedPropertyId}
+            >
+              <MenuItem value="">
+                <em>Select a room</em>
+              </MenuItem>
+              {buildings.map((building) => [
+                <MenuItem 
+                  key={`building-${building.id}`} 
+                  disabled 
+                  sx={{ 
+                    bgcolor: 'action.hover',
+                    fontWeight: 'bold',
+                    color: 'text.primary'
+                  }}
+                >
+                  {building.name}
+                </MenuItem>,
+                ...rooms
+                  .filter(room => room.buildingId === building.id)
+                  .map(room => (
+                    <MenuItem 
+                      key={room.id} 
+                      value={room.id}
+                      sx={{ pl: 4 }}
+                    >
+                      {room.name} ({room.room_number})
+                    </MenuItem>
+                  ))
+              ])}
+            </TextField>
+
+            <TextField
+              select
               label="Guest"
               fullWidth
-              value={newReservation.guestId}
-              onChange={(e) => setNewReservation({ ...newReservation, guestId: e.target.value })}
+              value={newReservation.guest_id}
+              onChange={(e) => setNewReservation({ ...newReservation, guest_id: e.target.value })}
             >
               <MenuItem value="">
                 <em>Select a guest</em>
@@ -183,61 +291,88 @@ export default function Reservations() {
                 </MenuItem>
               ))}
             </TextField>
-            <TextField
-              select
-              label="Room"
-              fullWidth
-              value={newReservation.roomId}
-              onChange={(e) => setNewReservation({ ...newReservation, roomId: e.target.value })}
-            >
-              <MenuItem value="">
-                <em>Select a room</em>
-              </MenuItem>
-              {rooms.map((room) => (
-                <MenuItem key={room.id} value={room.id}>
-                  {room.name} ({room.roomNumber})
-                </MenuItem>
-              ))}
-            </TextField>
+
             <Box sx={{ display: 'flex', gap: 2 }}>
               <DatePicker
                 label="Check-in Date"
-                value={new Date(newReservation.startDate!)}
+                value={new Date(newReservation.start_date!)}
                 onChange={(date) => date && setNewReservation({
                   ...newReservation,
-                  startDate: date.toISOString().split('T')[0]
+                  start_date: date.toISOString().split('T')[0]
                 })}
                 sx={{ flex: 1 }}
               />
               <DatePicker
                 label="Check-out Date"
-                value={new Date(newReservation.endDate!)}
+                value={new Date(newReservation.end_date!)}
                 onChange={(date) => date && setNewReservation({
                   ...newReservation,
-                  endDate: date.toISOString().split('T')[0]
+                  end_date: date.toISOString().split('T')[0]
                 })}
                 sx={{ flex: 1 }}
               />
             </Box>
+
             <TextField
               label="Number of Guests"
               type="number"
               fullWidth
-              value={newReservation.numGuests}
+              value={newReservation.num_guests}
               onChange={(e) => setNewReservation({
                 ...newReservation,
-                numGuests: Number(e.target.value)
+                num_guests: Number(e.target.value)
               })}
               inputProps={{ min: 1 }}
             />
+
+            <TextField
+              label="Special Requests"
+              fullWidth
+              value={newReservation.special_requests}
+              onChange={(e) => setNewReservation({
+                ...newReservation,
+                special_requests: e.target.value
+              })}
+            />
+
+            {error && (
+              <Typography color="error">
+                {error}
+              </Typography>
+            )}
+
+            {successMessage && (
+              <Alert severity="success" sx={{ whiteSpace: 'pre-line' }}>
+                {successMessage}
+              </Alert>
+            )}
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+          <Button onClick={() => {
+            setOpenDialog(false)
+            setSuccessMessage(null)
+            setError(null)
+            setNewReservation({
+              guest_id: '',
+              room_id: '',
+              start_date: new Date().toISOString().split('T')[0],
+              end_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+              num_guests: 1,
+              special_requests: ''
+            })
+            setSelectedPropertyId('')
+          }}>
+            Close
+          </Button>
           <Button onClick={handleCheckAvailability} color="info">
             Check Availability
           </Button>
-          <Button onClick={handleCreateReservation} variant="contained">
+          <Button 
+            onClick={handleCreateReservation} 
+            variant="contained"
+            disabled={!newReservation.guest_id || !newReservation.room_id}
+          >
             Create Reservation
           </Button>
         </DialogActions>

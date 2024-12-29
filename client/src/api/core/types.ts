@@ -114,12 +114,12 @@ export interface CreateGuestRequest {
 }
 
 export interface CreateReservationRequest {
-  guestId: number;
-  roomId: number;
-  startDate: string;
-  endDate: string;
-  numGuests: number;
-  specialRequests?: string;
+  guest_id: number;
+  room_id: number;
+  start_date: string;
+  end_date: string;
+  num_guests: number;
+  special_requests?: string;
 }
 
 export interface RoomAvailabilityResponse {
