@@ -433,13 +433,17 @@ export class RessyApi {
 
   async searchGuests(query: { name?: string; email?: string; phone?: string }): Promise<Guest[]> {
     try {
-      const response = await fetch(`${this.baseURL}/guests/search`, {
+      const params = new URLSearchParams();
+      if (query.name) params.append('name', query.name);
+      if (query.email) params.append('email', query.email);
+      if (query.phone) params.append('phone', query.phone);
+
+      const response = await fetch(`${this.baseURL}/guests/?${params.toString()}`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        params: query,
       });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

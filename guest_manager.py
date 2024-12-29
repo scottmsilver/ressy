@@ -73,7 +73,7 @@ class GuestManager:
         """
         query = session.query(Guest)
         if name:
-            query = query.filter(Guest.name == name)
+            query = query.filter(Guest.name.ilike(f"%{name}%"))
         if email:
             query = query.filter(Guest.email.ilike(f"%{email}%"))
         if phone:
