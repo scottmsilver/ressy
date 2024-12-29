@@ -19,54 +19,138 @@ import type { Guest, Room, CreateReservationRequest, Property, Building } from '
 interface ReservationDialogProps {
   open: boolean;
   onClose: () => void;
-  initialReservation?: Partial<CreateReservationRequest>;
   onSave: (reservation: CreateReservationRequest) => Promise<void>;
+  initialReservation?: Partial<CreateReservationRequest>;
+  existingReservation?: {
+    id: string;
+    guest_name?: string;
+    room_name?: string;
+  };
+  mode?: 'create' | 'edit';
 }
 
-export default function ReservationDialog({ open, onClose, initialReservation, onSave }: ReservationDialogProps) {
-  const [guests, setGuests] = useState<Guest[]>([]);
+export default function ReservationDialog({ 
+  open, 
+  onClose, 
+  onSave,
+  initialReservation,
+  existingReservation,
+  mode = 'create'
+}: ReservationDialogProps) {
+  const [newReservation, setNewReservation] = useState<Partial<CreateReservationRequest>>({
+    guest_id: '',
+    room_id: '',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    special_requests: ''
+  });
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [pendingRoomId, setPendingRoomId] = useState<string>('');
   const [properties, setProperties] = useState<Property[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [newReservation, setNewReservation] = useState<Partial<CreateReservationRequest>>(
-    initialReservation || {
-      guest_id: '',
-      room_id: '',
-      start_date: new Date().toISOString().split('T')[0],
-      end_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-      num_guests: 1,
-      special_requests: ''
-    }
-  );
+  const [loading, setLoading] = useState(false);
 
+  // Reset state when dialog opens/closes
   useEffect(() => {
-    if (initialReservation) {
-      setNewReservation(prev => ({
-        ...prev,
-        ...initialReservation
-      }));
+    if (open) {
+      // Reset state first
+      setNewReservation({
+        guest_id: '',
+        room_id: '',
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+        special_requests: ''
+      });
+      setSelectedPropertyId('');
+      setPendingRoomId('');
+      setError(null);
+      setSuccessMessage(null);
 
-      // If we have a property ID, set it
-      if (initialReservation.property_id) {
-        setSelectedPropertyId(initialReservation.property_id.toString());
+      // If we have initial data, use it
+      if (initialReservation) {
+        setNewReservation(prev => ({
+          ...prev,
+          ...initialReservation,
+          guest_id: initialReservation.guest_id?.toString() || '',
+          room_id: initialReservation.room_id?.toString() || '',
+        }));
+        
+        if (initialReservation.property_id) {
+          setSelectedPropertyId(initialReservation.property_id.toString());
+          setPendingRoomId(initialReservation.room_id?.toString() || '');
+        }
       }
     }
-  }, [initialReservation]);
+  }, [open, initialReservation]);
 
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
-
+  // Fetch initial data when dialog opens
   useEffect(() => {
-    if (selectedPropertyId) {
-      fetchPropertyRooms(selectedPropertyId);
+    const fetchInitialData = async () => {
+      try {
+        setLoading(true);
+        const [guestsData, propertiesData] = await Promise.all([
+          api.searchGuests({}),
+          api.listProperties(),
+        ]);
+        setGuests(guestsData);
+        setProperties(propertiesData);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching initial data:', err);
+        setError('Failed to load initial data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (open) {
+      fetchInitialData();
     }
-  }, [selectedPropertyId]);
+  }, [open]);
 
+  // Load rooms when property is selected
   useEffect(() => {
-    fetchInitialData();
-  }, []);
+    const fetchPropertyRooms = async () => {
+      if (!selectedPropertyId) {
+        setRooms([]);
+        setBuildings([]);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        const property = await api.getProperty(Number(selectedPropertyId));
+        setBuildings(property.buildings);
+        
+        // Collect all rooms from all buildings
+        const allRooms = property.buildings.flatMap(building => 
+          building.rooms.map(room => ({
+            ...room,
+            buildingName: building.name,
+            buildingId: building.id
+          }))
+        );
+        setRooms(allRooms);
+
+        // Now that we have rooms, set the pending room_id if it exists and is valid
+        if (pendingRoomId && allRooms.find(r => r.id.toString() === pendingRoomId)) {
+          setNewReservation(prev => ({ ...prev, room_id: pendingRoomId }));
+          setPendingRoomId('');
+        }
+      } catch (err) {
+        console.error('Error fetching rooms:', err);
+        setError('Failed to load rooms');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPropertyRooms();
+  }, [selectedPropertyId]);
 
   useEffect(() => {
     if (initialReservation?.room_id) {
@@ -96,47 +180,6 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
       }
     }
   }, [rooms, newReservation.room_id]);
-
-  const fetchInitialData = async () => {
-    try {
-      setLoading(true);
-      const [guestsData, propertiesData] = await Promise.all([
-        api.searchGuests({}),
-        api.listProperties(),
-      ]);
-      setGuests(guestsData);
-      setProperties(propertiesData);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load initial data');
-      console.error('Error fetching initial data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPropertyRooms = async (propertyId: string) => {
-    try {
-      setLoading(true);
-      const property = await api.getProperty(Number(propertyId));
-      setBuildings(property.buildings);
-      
-      // Collect all rooms from all buildings
-      const allRooms = property.buildings.flatMap(building => 
-        building.rooms.map(room => ({
-          ...room,
-          buildingName: building.name,
-          buildingId: building.id
-        }))
-      );
-      setRooms(allRooms);
-    } catch (err) {
-      setError('Failed to load rooms');
-      console.error('Error fetching rooms:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCheckAvailability = async () => {
     if (!newReservation.room_id) {
@@ -200,7 +243,7 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
         room_id: Number(newReservation.room_id),
         start_date: newReservation.start_date!,
         end_date: newReservation.end_date!,
-        num_guests: newReservation.num_guests || 1,
+        num_guests: 1, // Default to 1
         special_requests: newReservation.special_requests || ''
       } as CreateReservationRequest)
 
@@ -211,23 +254,23 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
   };
 
   const handleClose = () => {
-    setSuccessMessage(null);
-    setError(null);
     setNewReservation({
       guest_id: '',
       room_id: '',
       start_date: new Date().toISOString().split('T')[0],
       end_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-      num_guests: 1,
       special_requests: ''
     });
     setSelectedPropertyId('');
+    setPendingRoomId('');
+    setError(null);
+    setSuccessMessage(null);
     onClose();
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>New Reservation</DialogTitle>
+      <DialogTitle>{mode === 'create' ? 'New Reservation' : 'Edit Reservation'}</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, my: 1 }}>
           <Grid container spacing={1.5}>
@@ -237,10 +280,10 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
                 label="Property"
                 fullWidth
                 size="small"
-                value={selectedPropertyId}
+                value={selectedPropertyId || ''}
                 onChange={(e) => {
-                  setSelectedPropertyId(e.target.value)
-                  setNewReservation({ ...newReservation, room_id: '' })
+                  setSelectedPropertyId(e.target.value);
+                  setNewReservation(prev => ({ ...prev, room_id: '' }));
                 }}
               >
                 <MenuItem value="">
@@ -260,8 +303,8 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
                 label="Room"
                 fullWidth
                 size="small"
-                value={newReservation.room_id}
-                onChange={(e) => setNewReservation({ ...newReservation, room_id: e.target.value })}
+                value={newReservation.room_id || ''}
+                onChange={(e) => setNewReservation(prev => ({ ...prev, room_id: e.target.value }))}
                 disabled={!selectedPropertyId}
               >
                 <MenuItem value="">
@@ -316,8 +359,8 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
                 label="Guest"
                 fullWidth
                 size="small"
-                value={newReservation.guest_id}
-                onChange={(e) => setNewReservation({ ...newReservation, guest_id: e.target.value })}
+                value={newReservation.guest_id || ''}
+                onChange={(e) => setNewReservation(prev => ({ ...prev, guest_id: e.target.value }))}
               >
                 <MenuItem value="">
                   <em>Select a guest</em>
@@ -330,21 +373,6 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
               </TextField>
             </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="Number of Guests"
-                type="number"
-                fullWidth
-                size="small"
-                value={newReservation.num_guests}
-                onChange={(e) => setNewReservation({
-                  ...newReservation,
-                  num_guests: Number(e.target.value)
-                })}
-                inputProps={{ min: 1 }}
-              />
-            </Grid>
-
             <Grid item xs={12}>
               <TextField
                 label="Special Requests"
@@ -353,10 +381,10 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
                 multiline
                 rows={2}
                 value={newReservation.special_requests}
-                onChange={(e) => setNewReservation({
-                  ...newReservation,
+                onChange={(e) => setNewReservation(prev => ({
+                  ...prev,
                   special_requests: e.target.value
-                })}
+                }))}
               />
             </Grid>
           </Grid>
@@ -375,11 +403,7 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={() => {
-          onClose();
-          setSuccessMessage(null);
-          setError(null);
-        }}>
+        <Button onClick={handleClose}>
           Cancel
         </Button>
         <Button onClick={handleCheckAvailability} color="info">
@@ -390,7 +414,7 @@ export default function ReservationDialog({ open, onClose, initialReservation, o
           variant="contained"
           disabled={!newReservation.room_id || !newReservation.guest_id}
         >
-          Create
+          {mode === 'create' ? 'Create' : 'Save Changes'}
         </Button>
       </DialogActions>
     </Dialog>

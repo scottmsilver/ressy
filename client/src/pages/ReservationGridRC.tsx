@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, CircularProgress, Typography, Button, ButtonGroup, Paper } from '@mui/material';
 import { format, startOfDay, addDays, eachDayOfInterval } from 'date-fns';
@@ -25,6 +25,7 @@ interface Reservation {
   guestId: number;
   buildingName: string;
   roomName: string;
+  special_requests?: string;
 }
 
 export default function ReservationGridRC() {
@@ -40,9 +41,18 @@ export default function ReservationGridRC() {
   const [dragEnd, setDragEnd] = useState<{ roomId: string; date: Date } | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [initialReservation, setInitialReservation] = useState<Partial<CreateReservationRequest>>({});
+  const [existingReservation, setExistingReservation] = useState<{
+    id: string;
+    guest_name?: string;
+    room_name?: string;
+  }>();
+  const scrollPosition = useRef<number>(0);
 
   const fetchData = async () => {
     if (!id) return;
+    
+    // Store scroll position before fetching
+    scrollPosition.current = window.scrollY;
     
     setLoading(true);
     try {
@@ -76,12 +86,17 @@ export default function ReservationGridRC() {
         status: res.status,
         guestId: res.guest_id,
         buildingName: res.building_name,
-        roomName: res.room_name
+        roomName: res.room_name,
+        special_requests: res.special_requests
       })));
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
+      // Restore scroll position after data is loaded
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollPosition.current);
+      });
     }
   };
 
@@ -126,10 +141,11 @@ export default function ReservationGridRC() {
 
       // Find the room and its property
       const room = rooms.find(r => r.id === dragStart.roomId);
+      if (!room) return;
       
       // Open dialog with pre-filled data
       setInitialReservation({
-        room_id: dragStart.roomId,
+        room_id: dragStart.roomId.toString(),
         property_id: id,
         start_date: format(startOfDay(startDate), 'yyyy-MM-dd'),
         end_date: format(startOfDay(addDays(endDate, 1)), 'yyyy-MM-dd')
@@ -141,6 +157,51 @@ export default function ReservationGridRC() {
   const handleMouseLeave = () => {
     setDragStart(null);
     setDragEnd(null);
+  };
+
+  const handleReservationClick = async (reservation: any) => {
+    // Get the full reservation details first
+    try {
+      const fullReservation = await api.getReservation(Number(reservation.id));
+      
+      setInitialReservation({
+        guest_id: reservation.guestId,
+        room_id: reservation.roomId,
+        property_id: id, // Set the property ID from the current page
+        start_date: reservation.start,
+        end_date: reservation.end,
+        special_requests: fullReservation.special_requests || ''
+      });
+      setExistingReservation({
+        id: reservation.id,
+        guest_name: reservation.title,
+        room_name: reservation.roomName
+      });
+      setOpenDialog(true);
+    } catch (err) {
+      console.error('Error fetching reservation details:', err);
+    }
+  };
+
+  const handleSaveReservation = async (reservation: CreateReservationRequest) => {
+    try {
+      if (existingReservation) {
+        // Update existing reservation
+        await api.updateReservation(Number(existingReservation.id), reservation);
+      } else {
+        // Create new reservation
+        await api.createReservation(reservation);
+      }
+      // Store scroll position before refresh
+      scrollPosition.current = window.scrollY;
+      // Refresh the data to get the updated reservations
+      await fetchData();
+      setOpenDialog(false);
+      setExistingReservation(undefined);
+    } catch (err: any) {
+      console.error('Error saving reservation:', err);
+      throw err;
+    }
   };
 
   if (loading) {
@@ -277,7 +338,7 @@ export default function ReservationGridRC() {
                   return (
                     <Box
                       key={res.id}
-                      onClick={() => navigate(`/reservations/${res.id}`)}
+                      onClick={() => handleReservationClick(res)}
                       sx={{
                         position: 'absolute',
                         top: '6px',
@@ -335,20 +396,18 @@ export default function ReservationGridRC() {
 
       <ReservationDialog
         open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        initialReservation={initialReservation}
-        onSave={async (reservation) => {
-          try {
-            await api.createReservation(reservation);
-            // Refresh the data to get the updated reservations
-            await fetchData();
-            setOpenDialog(false);
-          } catch (err: any) {
-            console.error('Error creating reservation:', err);
-            // Let the dialog handle the error
-            throw err;
-          }
+        onClose={() => {
+          setOpenDialog(false);
+          setExistingReservation(undefined);
+          // Restore scroll position when dialog closes
+          requestAnimationFrame(() => {
+            window.scrollTo(0, scrollPosition.current);
+          });
         }}
+        initialReservation={initialReservation}
+        existingReservation={existingReservation}
+        mode={existingReservation ? 'edit' : 'create'}
+        onSave={handleSaveReservation}
       />
     </Box>
   );
