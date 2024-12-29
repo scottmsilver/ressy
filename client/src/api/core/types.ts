@@ -125,9 +125,9 @@ export interface CreateReservationRequest {
 export interface RoomAvailabilityResponse {
   available: boolean;
   conflicts?: Array<{
-    startDate: string;
-    endDate: string;
-    guestName: string;
+    start_date: string;
+    end_date: string;
+    guest_name: string;
   }>;
 }
 

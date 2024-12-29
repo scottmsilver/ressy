@@ -361,6 +361,24 @@ class PropertyForecastReport(BaseModel):
     forecast_by_date: List[ForecastByDate]
     model_config = ConfigDict(from_attributes=True)
 
+class PropertyReservationResponse(BaseModel):
+    room_id: int
+    room_name: str
+    room_number: str
+    building_id: int
+    building_name: str
+    guest_id: int
+    guest_name: str
+    start_date: date
+    end_date: date
+    status: str
+    model_config = ConfigDict(from_attributes=True)
+
+class PropertyReservationsResponse(BaseModel):
+    total_rooms: int
+    reservations: List[PropertyReservationResponse]
+    model_config = ConfigDict(from_attributes=True)
+
 # Initialize PropertyManager, GuestManager and ReservationManager
 pm = PropertyManager()
 gm = GuestManager()
@@ -1386,6 +1404,69 @@ def get_property_forecast_report(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/properties/{property_id}/reservations", response_model=PropertyReservationsResponse)
+def get_property_reservations(
+    property_id: int,
+    start_date: date = Query(..., description="Start date in YYYY-MM-DD format"),
+    end_date: date = Query(..., description="End date in YYYY-MM-DD format"),
+    db: Session = Depends(get_db)
+):
+    """Get all reservations for a property in a date range"""
+    try:
+        # Get the property with its buildings and rooms
+        property = db.query(Property).filter(Property.id == property_id).first()
+        if not property:
+            raise HTTPException(status_code=404, detail="Property not found")
+
+        # Get all rooms in the property
+        rooms = []
+        total_rooms = 0
+        for building in property.buildings:
+            rooms.extend(building.rooms)
+            total_rooms += len(building.rooms)
+
+        # Get all reservations for these rooms in the date range
+        room_ids = [room.id for room in rooms]
+        reservations = (
+            db.query(Reservation)
+            .join(Room)
+            .join(Building)
+            .join(Guest)
+            .filter(
+                Room.id.in_(room_ids),
+                Reservation.start_date <= end_date,
+                Reservation.end_date >= start_date
+            )
+            .all()
+        )
+
+        # Format the response
+        reservation_responses = []
+        for res in reservations:
+            room = next(r for r in rooms if r.id == res.room_id)
+            building = next(b for b in property.buildings if b.id == room.building_id)
+            
+            reservation_responses.append(PropertyReservationResponse(
+                room_id=room.id,
+                room_name=room.name,
+                room_number=room.room_number,
+                building_id=building.id,
+                building_name=building.name,
+                guest_id=res.guest_id,
+                guest_name=res.guest.name,
+                start_date=res.start_date,
+                end_date=res.end_date,
+                status=res.status
+            ))
+
+        return PropertyReservationsResponse(
+            total_rooms=total_rooms,
+            reservations=reservation_responses
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Health check endpoint
 @app.get("/health")

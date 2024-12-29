@@ -26,9 +26,9 @@ export default function Reservations() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
-  const [newReservation, setNewReservation] = useState<CreateReservationRequest>({
-    guestId: 0,
-    roomId: 0,
+  const [newReservation, setNewReservation] = useState<Partial<CreateReservationRequest>>({
+    guestId: '',
+    roomId: '',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     numGuests: 1,
@@ -57,13 +57,24 @@ export default function Reservations() {
   }
 
   const handleCreateReservation = async () => {
+    if (!newReservation.guestId || !newReservation.roomId) {
+      setError('Please select both guest and room')
+      return
+    }
+
     try {
-      const reservation = await api.createReservation(newReservation)
+      const reservation = await api.createReservation({
+        guestId: Number(newReservation.guestId),
+        roomId: Number(newReservation.roomId),
+        startDate: newReservation.startDate!,
+        endDate: newReservation.endDate!,
+        numGuests: newReservation.numGuests!,
+      })
       setReservations([...reservations, reservation])
       setOpenDialog(false)
       setNewReservation({
-        guestId: 0,
-        roomId: 0,
+        guestId: '',
+        roomId: '',
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
         numGuests: 1,
@@ -76,14 +87,23 @@ export default function Reservations() {
   }
 
   const handleCheckAvailability = async () => {
+    if (!newReservation.roomId) {
+      setError('Please select a room first')
+      return
+    }
+
     try {
       const availability = await api.checkRoomAvailability(
-        newReservation.roomId,
-        newReservation.startDate,
-        newReservation.endDate
+        Number(newReservation.roomId),
+        newReservation.startDate!,
+        newReservation.endDate!
       )
+      
       if (!availability.available) {
-        setError('Room is not available for the selected dates')
+        const conflicts = availability.conflicts?.map(conflict => 
+          `${conflict.guest_name} (${new Date(conflict.start_date).toLocaleDateString()} - ${new Date(conflict.end_date).toLocaleDateString()})`
+        ).join(', ')
+        setError(`Room is not available. Existing reservations: ${conflicts}`)
       } else {
         setError(null)
       }
@@ -143,77 +163,82 @@ export default function Reservations() {
         ))}
       </Grid>
 
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>New Reservation</DialogTitle>
         <DialogContent>
-          <TextField
-            select
-            margin="dense"
-            label="Guest"
-            fullWidth
-            value={newReservation.guestId}
-            onChange={(e) => setNewReservation({ ...newReservation, guestId: Number(e.target.value) })}
-          >
-            {guests.map((guest) => (
-              <MenuItem key={guest.id} value={guest.id}>
-                {guest.name}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, my: 1 }}>
+            <TextField
+              select
+              label="Guest"
+              fullWidth
+              value={newReservation.guestId}
+              onChange={(e) => setNewReservation({ ...newReservation, guestId: e.target.value })}
+            >
+              <MenuItem value="">
+                <em>Select a guest</em>
               </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            select
-            margin="dense"
-            label="Room"
-            fullWidth
-            value={newReservation.roomId}
-            onChange={(e) => setNewReservation({ ...newReservation, roomId: Number(e.target.value) })}
-          >
-            {rooms.map((room) => (
-              <MenuItem key={room.id} value={room.id}>
-                {room.name} ({room.roomNumber})
+              {guests.map((guest) => (
+                <MenuItem key={guest.id} value={guest.id}>
+                  {guest.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Room"
+              fullWidth
+              value={newReservation.roomId}
+              onChange={(e) => setNewReservation({ ...newReservation, roomId: e.target.value })}
+            >
+              <MenuItem value="">
+                <em>Select a room</em>
               </MenuItem>
-            ))}
-          </TextField>
-          <DatePicker
-            label="Check-in Date"
-            value={new Date(newReservation.startDate)}
-            onChange={(date) => date && setNewReservation({
-              ...newReservation,
-              startDate: date.toISOString().split('T')[0]
-            })}
-          />
-          <DatePicker
-            label="Check-out Date"
-            value={new Date(newReservation.endDate)}
-            onChange={(date) => date && setNewReservation({
-              ...newReservation,
-              endDate: date.toISOString().split('T')[0]
-            })}
-          />
-          <TextField
-            margin="dense"
-            label="Number of Guests"
-            type="number"
-            fullWidth
-            value={newReservation.numGuests}
-            onChange={(e) => setNewReservation({
-              ...newReservation,
-              numGuests: Number(e.target.value)
-            })}
-          />
+              {rooms.map((room) => (
+                <MenuItem key={room.id} value={room.id}>
+                  {room.name} ({room.roomNumber})
+                </MenuItem>
+              ))}
+            </TextField>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <DatePicker
+                label="Check-in Date"
+                value={new Date(newReservation.startDate!)}
+                onChange={(date) => date && setNewReservation({
+                  ...newReservation,
+                  startDate: date.toISOString().split('T')[0]
+                })}
+                sx={{ flex: 1 }}
+              />
+              <DatePicker
+                label="Check-out Date"
+                value={new Date(newReservation.endDate!)}
+                onChange={(date) => date && setNewReservation({
+                  ...newReservation,
+                  endDate: date.toISOString().split('T')[0]
+                })}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+            <TextField
+              label="Number of Guests"
+              type="number"
+              fullWidth
+              value={newReservation.numGuests}
+              onChange={(e) => setNewReservation({
+                ...newReservation,
+                numGuests: Number(e.target.value)
+              })}
+              inputProps={{ min: 1 }}
+            />
+          </Box>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-          <Button onClick={handleCheckAvailability} color="primary">
+          <Button onClick={handleCheckAvailability} color="info">
             Check Availability
           </Button>
-          <Button
-            onClick={handleCreateReservation}
-            variant="contained"
-            color="primary"
-            disabled={!newReservation.guestId || !newReservation.roomId}
-          >
-            Create
+          <Button onClick={handleCreateReservation} variant="contained">
+            Create Reservation
           </Button>
         </DialogActions>
       </Dialog>

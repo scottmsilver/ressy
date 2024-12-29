@@ -7,6 +7,7 @@ import PropertyDetails from './pages/PropertyDetails'
 import Guests from './pages/Guests'
 import Reservations from './pages/Reservations'
 import Reports from './pages/Reports'
+import ReservationGrid from './pages/ReservationGrid'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="properties" element={<Properties />} />
           <Route path="properties/:id" element={<PropertyDetails />} />
+          <Route path="properties/:id/reservations" element={<ReservationGrid />} />
           <Route path="guests" element={<Guests />} />
           <Route path="reservations" element={<Reservations />} />
           <Route path="reports" element={<Reports />} />

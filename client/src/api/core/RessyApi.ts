@@ -5,6 +5,24 @@ import {
   RoomAvailabilityResponse, ApiError, UpdateRoomRequest
 } from './types';
 
+export interface PropertyReservation {
+  room_id: number;
+  room_name: string;
+  room_number: string;
+  building_id: number;
+  building_name: string;
+  guest_id: number;
+  guest_name: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+}
+
+export interface PropertyReservationsResponse {
+  total_rooms: number;
+  reservations: PropertyReservation[];
+}
+
 export class RessyApi {
   private baseURL: string;
 
@@ -146,6 +164,37 @@ export class RessyApi {
       return await response.json();
     } catch (error) {
       console.error('Update property error:', error);
+      throw error;
+    }
+  }
+
+  async getPropertyReservations(
+    propertyId: number,
+    startDate: string,
+    endDate: string
+  ): Promise<PropertyReservationsResponse> {
+    try {
+      const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+      });
+
+      const response = await fetch(
+        `${this.baseURL}/properties/${propertyId}/reservations?${params.toString()}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Get property reservations error:', error);
       throw error;
     }
   }

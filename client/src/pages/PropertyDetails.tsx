@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Box,
   Typography,
@@ -43,6 +43,7 @@ interface MenuState {
 
 export default function PropertyDetails() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [property, setProperty] = useState<Property | null>(null)
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null)
@@ -548,59 +549,24 @@ export default function PropertyDetails() {
         </Box>
       ) : property ? (
         <>
-          <Box 
-            sx={{ 
-              mb: 4,
-              '&:hover .property-actions': {
-                opacity: 1,
-              },
-            }}
-          >
-            <Stack direction="row" alignItems="center" spacing={2}>
-              <Stack direction="row" spacing={1} alignItems="baseline">
-                <Typography variant="h4" component="h1">
-                  {property.name}
-                </Typography>
-                <Typography variant="h5" color="text.secondary">
-                  ({property.buildings.reduce((total, building) => 
-                    total + building.rooms.reduce((roomTotal, room) => 
-                      roomTotal + calculateRoomCapacity(room), 0), 0)})
-                </Typography>
-              </Stack>
-              <Stack 
-                direction="row" 
-                spacing={1}
-                className="property-actions"
-                sx={{ 
-                  opacity: 0,
-                  transition: 'opacity 0.2s ease-in-out',
-                }}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <Typography variant="h4">{property.name}</Typography>
+            <Stack direction="row" spacing={2}>
+              <Button
+                variant="contained"
+                color="secondary"
+                onClick={() => navigate(`/properties/${id}/reservations`)}
               >
-                <IconButton 
-                  size="small"
-                  onClick={() => setOpenDialog('editProperty')}
-                  sx={{ 
-                    bgcolor: 'background.paper',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => setOpenDialog('building')}
-                  sx={{ 
-                    bgcolor: 'background.paper',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
-              </Stack>
+                View Reservation Grid
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<EditIcon />}
+                onClick={() => setOpenDialog('editProperty')}
+              >
+                Edit Property
+              </Button>
             </Stack>
-            <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 1 }}>
-              {property.address}
-            </Typography>
           </Box>
 
           {/* Buildings Section */}
