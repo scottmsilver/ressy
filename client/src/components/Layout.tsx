@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   AppBar,
   Box,
@@ -28,9 +28,19 @@ const drawerWidth = 240
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen)
+  }
+
+  const getContextPath = () => {
+    const path = location.pathname
+    if (path.includes('/properties/')) {
+      const id = path.split('/').pop()
+      return `Property ${id}`
+    }
+    return path.substring(1) || 'Dashboard'
   }
 
   const menuItems = [
@@ -48,6 +58,7 @@ export default function Layout() {
           Ressy
         </Typography>
       </Toolbar>
+      <ApiStatus />
       <List>
         {menuItems.map((item) => (
           <ListItem
@@ -74,29 +85,58 @@ export default function Layout() {
         sx={{
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
+          '& .MuiToolbar-root': { minHeight: 40, px: 1 }
         }}
       >
-        <Toolbar>
+        <Toolbar sx={{ gap: 1 }}>
           <IconButton
             color="inherit"
             aria-label="open drawer"
             edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: 'none' } }}
+            sx={{ mr: 0.5, display: { sm: 'none' }, p: 0.5 }}
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
+          <Typography variant="h6" noWrap component="div" sx={{ fontSize: '0.875rem' }}>
             Property Management System
           </Typography>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', ml: 2 }}>
-            <ApiStatus />
-          </Box>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              color: 'text.secondary',
+              cursor: 'pointer',
+              '&:hover': { color: 'text.primary' },
+              fontSize: '0.75rem',
+              borderLeft: 1,
+              borderColor: 'divider',
+              pl: 1,
+              minWidth: 0,
+              flexShrink: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              lineHeight: 1
+            }}
+            onClick={() => {/* TODO: Show context menu */}}
+          >
+            {getContextPath()}
+          </Typography>
         </Toolbar>
       </AppBar>
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        sx={{ 
+          width: { sm: drawerWidth }, 
+          flexShrink: { sm: 0 },
+          '& .MuiDrawer-paper': {
+            pt: 0,
+            '& .MuiToolbar-root': { 
+              minHeight: 40,
+              px: 1
+            }
+          }
+        }}
       >
         <Drawer
           variant="temporary"
@@ -133,7 +173,7 @@ export default function Layout() {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
+          p: 2,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
         }}
       >

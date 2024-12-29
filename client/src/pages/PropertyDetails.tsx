@@ -269,7 +269,6 @@ export default function PropertyDetails() {
           rooms: building.rooms.filter(r => r.id !== selectedRoom.id),
         })),
       })
-
       handleCloseDialog()
     } catch (error) {
       console.error('Failed to delete room:', error)
@@ -779,7 +778,7 @@ export default function PropertyDetails() {
                                 </IconButton>
                                 <IconButton
                                   size="small"
-                                  onClick={() => handleMenuAction('delete', 'room', room)}
+                                  onClick={() => handleOpenDialog('deleteRoom', room)}
                                 >
                                   <DeleteIcon fontSize="small" />
                                 </IconButton>
