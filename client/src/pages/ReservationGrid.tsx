@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, CircularProgress, IconButton, Typography, Button, ButtonGroup } from '@mui/material';
-import { DataGrid, GridColDef, GridValueGetterParams } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { ChevronLeft, ChevronRight } from '@mui/icons-material';
-import { format, startOfDay, addDays, subDays, eachDayOfInterval } from 'date-fns';
+import { format, startOfDay, addDays, subDays, eachDayOfInterval, isWithinInterval, differenceInDays } from 'date-fns';
 import { RessyApi } from '../api/core/RessyApi';
 import { Room } from '../api/core/types';
+import { createPortal } from 'react-dom';
 
 const api = new RessyApi('http://localhost:8000');
 
@@ -39,7 +40,7 @@ export default function ReservationGrid() {
   const [startDate, setStartDate] = useState<Date>(startOfDay(new Date()));
   const [endDate, setEndDate] = useState<Date>(addDays(startOfDay(new Date()), 6)); // Show 7 days by default
   const [rooms, setRooms] = useState<RoomRow[]>([]);
-  const [events, setEvents] = useState<ReservationEvent[]>([]);
+  const [reservations, setReservations] = useState<ReservationEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -78,8 +79,8 @@ export default function ReservationGrid() {
           // Set check-in time to 3 PM (15:00)
           startDate.setHours(15, 0, 0);
           
-          // Set check-out time to 11 AM (11:00)
-          endDate.setHours(11, 0, 0);
+          // Set check-out time to 11:59:59 PM to include the full end date
+          endDate.setHours(23, 59, 59);
           
           return {
             id: res.reservation_id,
@@ -95,7 +96,7 @@ export default function ReservationGrid() {
           };
         });
         
-        setEvents(calendarEvents);
+        setReservations(calendarEvents);
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -120,7 +121,7 @@ export default function ReservationGrid() {
       field: 'name',
       headerName: 'Room',
       width: 250,
-      renderCell: (params: GridValueGetterParams<any, GridRow>) => {
+      renderCell: (params: GridRenderCellParams<any, GridRow>) => {
         const row = params.row;
         return row ? (
           <Box>
@@ -144,64 +145,92 @@ export default function ReservationGrid() {
         </div>
       ),
       cellClassName: 'reservation-cell',
-      renderCell: (params: GridValueGetterParams<any, GridRow>) => {
-        const reservation = events.find(event => 
+      renderCell: (params: GridRenderCellParams) => {
+        const date = new Date(params.field);
+        const matchingReservations = reservations.filter(event => 
           event.roomId === params.row.id && 
           format(event.start, 'yyyy-MM-dd') <= format(date, 'yyyy-MM-dd') &&
           format(event.end, 'yyyy-MM-dd') >= format(date, 'yyyy-MM-dd')
         );
 
-        // Only render the cell content for the start date
-        const isStartDate = reservation && format(reservation.start, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
-        if (!reservation || !isStartDate) return null;
-
-        // Calculate the number of days this reservation spans
-        const startDate = reservation.start;
-        const endDate = reservation.end;
-        const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-        const columnIndex = dates.findIndex(d => format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
-
-        const handleReservationClick = (reservation: ReservationEvent) => {
-          navigate(`/reservations/${reservation.id}`);
-        };
-
-        return (
-          <Box
-            key={reservation.id}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              navigate(`/reservations/${reservation.id}`);
-            }}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            sx={{
-              position: 'absolute',
-              left: '50%',
-              width: `calc(${daysDiff * 100}% - 50%)`,
-              height: '60%',
-              top: '20%',
-              backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
-              border: '1px solid',
-              borderColor: reservation.status === 'cancelled' ? '#ef5350' : '#90caf9',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              padding: '4px 8px',
-              zIndex: 2,
-              '&:hover': {
-                filter: 'brightness(0.95)',
-              },
-            }}
-          >
-            <Typography noWrap>
-              {reservation.guestName}
-            </Typography>
-          </Box>
-        );
+        return matchingReservations.map(reservation => {
+          const isStartDate = format(reservation.start, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
+          const isEndDate = format(reservation.end, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
+          
+          return (
+            <Box
+              key={reservation.id}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                navigate(`/reservations/${reservation.id}`);
+              }}
+              sx={{
+                position: 'absolute',
+                left: 0,
+                top: '20%',
+                height: '60%',
+                width: '100%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                zIndex: 1000,
+                pointerEvents: 'auto',
+                '&:hover': {
+                  '& .reservation-overlay': {
+                    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                  }
+                },
+              }}
+            >
+              {/* Transparent overlay for hover and click */}
+              <Box
+                className="reservation-overlay"
+                sx={{
+                  position: 'absolute',
+                  left: isStartDate ? '50%' : 0,
+                  right: isEndDate ? '50%' : 0,
+                  top: 0,
+                  bottom: 0,
+                  backgroundColor: 'transparent',
+                  borderTop: `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}`,
+                  borderBottom: `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}`,
+                  borderLeft: isStartDate ? `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}` : 'none',
+                  borderRight: isEndDate ? `1px solid ${reservation.status === 'cancelled' ? '#ef5350' : '#90caf9'}` : 'none',
+                  transition: 'background-color 0.2s',
+                }}
+              />
+              
+              {/* Visible label only on start date */}
+              {isStartDate && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    left: '50%',
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
+                    border: '1px solid',
+                    borderColor: reservation.status === 'cancelled' ? '#ef5350' : '#90caf9',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '4px 8px',
+                    overflow: 'hidden',
+                    pointerEvents: 'none', // Let clicks go through to the overlay
+                    // Extend beyond the cell
+                    width: `${(differenceInDays(new Date(reservation.end), date) + 1) * 100}%`,
+                  }}
+                >
+                  <Typography noWrap>
+                    {reservation.guestName}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          );
+        });
       }
     }))
   ];
@@ -237,7 +266,16 @@ export default function ReservationGrid() {
           {format(startDate, 'MMM d')} - {format(endDate, 'MMM d, yyyy')}
         </Typography>
       </Box>
-      <Box sx={{ flex: 1 }}>
+      <Box sx={{ flex: 1 }}
+        onClick={(e) => {
+          console.log('Container clicked:', {
+            mouseX: e.clientX,
+            mouseY: e.clientY,
+            target: e.target,
+            currentTarget: e.currentTarget
+          });
+        }}
+      >
         <DataGrid
           rows={rows}
           columns={columns}
@@ -245,6 +283,23 @@ export default function ReservationGrid() {
           disableRowSelectionOnClick
           disableColumnMenu
           rowHeight={60}
+          onClick={(e) => {
+            console.log('Grid clicked:', {
+              mouseX: e.clientX,
+              mouseY: e.clientY,
+              target: e.target,
+              currentTarget: e.currentTarget
+            });
+          }}
+          onCellClick={(params, event) => {
+            console.log('Cell clicked:', {
+              rowId: params.id,
+              field: params.field,
+              mouseX: event.clientX,
+              mouseY: event.clientY,
+              target: event.target,
+            });
+          }}
           sx={{
             '& .MuiDataGrid-cell': {
               borderRight: '1px solid rgba(224, 224, 224, 1)',
@@ -255,6 +310,16 @@ export default function ReservationGrid() {
               zIndex: 1,
               '& > *': {
                 overflow: 'visible !important',
+                position: 'relative',
+                '&:before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  pointerEvents: 'none'
+                }
               }
             },
             '& .MuiDataGrid-columnHeader': {
