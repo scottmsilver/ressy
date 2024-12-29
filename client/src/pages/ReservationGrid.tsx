@@ -72,11 +72,20 @@ export default function ReservationGrid() {
 
         // Build response
         const calendarEvents = reservationsData.reservations.map(res => {
+          const startDate = new Date(res.start_date);
+          const endDate = new Date(res.end_date);
+          
+          // Set check-in time to 3 PM (15:00)
+          startDate.setHours(15, 0, 0);
+          
+          // Set check-out time to 11 AM (11:00)
+          endDate.setHours(11, 0, 0);
+          
           return {
             id: res.reservation_id,
             guestName: res.guest_name,
-            start: new Date(res.start_date),
-            end: new Date(res.end_date),
+            start: startDate,
+            end: endDate,
             roomId: res.room_id,
             roomName: res.room_name,
             roomNumber: res.room_number,
@@ -158,27 +167,33 @@ export default function ReservationGrid() {
 
         return (
           <Box
-            onClick={() => handleReservationClick(reservation)}
+            key={reservation.id}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              navigate(`/reservations/${reservation.id}`);
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             sx={{
               position: 'absolute',
-              left: 0,
-              height: 'calc(100% - 8px)',
-              width: `calc(${daysDiff * 100}% - 8px)`,
-              top: '4px',
-              backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e8f5e9',
+              left: '50%',
+              right: '-50%',
+              height: '100%',
+              backgroundColor: reservation.status === 'cancelled' ? '#ffebee' : '#e3f2fd',
+              border: '1px solid',
+              borderColor: reservation.status === 'cancelled' ? '#ef5350' : '#90caf9',
+              borderRadius: '4px',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              padding: '0 8px',
-              borderRadius: '4px',
-              border: '1px solid rgba(0, 0, 0, 0.12)',
-              zIndex: 1,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
+              padding: '4px 8px',
               overflow: 'hidden',
-              whiteSpace: 'nowrap',
+              zIndex: 2,  // Ensure reservations are above grid cells
               '&:hover': {
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                transform: 'translateY(-1px)',
+                filter: 'brightness(0.95)',
               },
             }}
           >
@@ -207,6 +222,8 @@ export default function ReservationGrid() {
     );
   }
 
+  const numDays = dates.length;
+
   return (
     <Box sx={{ height: 'calc(100vh - 100px)', p: 2, display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, gap: 2 }}>
@@ -234,6 +251,8 @@ export default function ReservationGrid() {
               position: 'relative',
               padding: 0,
               overflow: 'visible !important',
+              cursor: 'pointer',
+              zIndex: 1,
             },
             '& .MuiDataGrid-columnHeader': {
               borderRight: '1px solid rgba(224, 224, 224, 1)',
